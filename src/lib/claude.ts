@@ -28,7 +28,10 @@ function client(): Anthropic {
  * (ör. "...</need_summary>\n<parameter name=...>"). İlk kapanış etiketinde kes, kalan etiketleri temizle.
  */
 function cleanText(value: string): string {
-  return value.split(/<\/[a-z_]+>/i)[0].replace(/<[^>]{1,80}>/g, "").trim();
+  // Yalnızca araç/parametre etiketlerini hedefle (alt çizgili alan adları, parameter, invoke); normal metne dokunma.
+  const TAG = /<\/?(?:[a-z]+_[a-z_]+|parameter|invoke)\b[^>]*>/gi;
+  const cut = value.split(/<\/(?:[a-z]+_[a-z_]+|parameter|invoke)>/i)[0];
+  return cut.replace(TAG, "").trim();
 }
 const cleanString = () => z.string().transform(cleanText);
 const cleanNullable = () => z.string().nullable().transform((v) => (v === null ? null : cleanText(v)));
