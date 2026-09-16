@@ -18,7 +18,7 @@ Zamanlar Europe/Istanbul. Kaynak: git commit zamanları (`git log --date=format:
 | 14:04–14:21 | 17 dk | **Puanlama ve durumlar** | Skor Sıcak/Ilık/Soğuk → 10 üzerinden rubrikli puan (4 bileşen model, iletişim bileşeni ve toplam kod); durumlar Bekliyor/İşlemde/Olumlu/Olumsuz; admin puan rozeti ve bileşen çubukları; idempotent göç scripti; göçün yol hatası düzeltildi; canlı doğrulama; günlük talep limiti 10. | Commit 14:16-14:21 |
 | 14:21–14:37 | 16 dk | **Kapsam sınırı ve dokümantasyon** | Kapsam sınırı: kesin kapsam kuralları ve `end_conversation` aracı (konu dışı ısrar/hakaret → kapatma, talep yok); limit tartışması ve kararı; README'de "yeter" reddinin açıklaması ve yapılamayanlar listesi. | Commit 14:30-14:37 |
 | 14:37–14:52 | 15 dk | **Streaming, hafıza ve arama** | Streaming (NDJSON olay akışı, çip kapısı, reset), tarayıcı hafızası (sessionStorage), admin arama kutusu; README "nice to have" düzeni; Playwright ve canlı akış testleri. | Commit 14:52 |
-| 14:52–15:20 | ~28 dk | **Kapanış: timesheet, güvenlik, paket** | Timesheet; kalite ve güvenlik turu (bağımlılık denetimi, başlıklar, çerez, CSRF, kaba kuvvet, transkript bütünlüğü, giriş doğrulama); düzeltmeler ve rapor; paketleme. | `TIMESHEET.md`, `docs/kalite-ve-guvenlik-raporu.md` |
+| 14:52–15:20 | ~28 dk | **Kapanış: timesheet, güvenlik, paket** | Timesheet; kalite ve güvenlik turu (bağımlılık denetimi, başlıklar, çerez, CSRF, kaba kuvvet, transkript bütünlüğü, giriş doğrulama); düzeltmeler ve rapor; paketleme. | `TIMESHEET.md`, `kalite-ve-guvenlik-raporu.md` |
 
 ## Plan ile gerçekleşen
 

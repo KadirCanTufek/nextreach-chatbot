@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 
-/** Temel güvenlik başlıkları. CSP bilinçli olarak eklenmedi (bkz. docs/kalite-ve-guvenlik-raporu.md). */
+/** Temel güvenlik başlıkları. CSP bilinçli olarak eklenmedi (bkz. kalite-ve-guvenlik-raporu.md). */
 const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
