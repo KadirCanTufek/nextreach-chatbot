@@ -3,7 +3,7 @@
 Landing page'deki "Bize Ulaşın" butonuna tıklayan ziyaretçiyi soğuk bir form yerine bir sohbet karşılar. Kısa bir tanışma adımından sonra asistan (adı **Reach**) ziyaretçinin **neye ihtiyacı olduğunu** konuşarak anlar, satış ekibinin harekete geçebileceği bir ihtiyaç profili çıkarır ve talebi kaydeder. Ekip, `/admin` altındaki iç görünümden "bugün kim, neden ulaşmış" sorusunu tek bakışta cevaplar.
 
 **Repo:** https://github.com/KadirCanTufek/nextreach-chatbot
-**Canlı link:** _(deploy sonrası eklenecek)_
+**Canlı link:** https://nextreach-chatbot.vercel.app
 **Toplam süre:** _(README teslimde doldurulacak)_
 
 ---
