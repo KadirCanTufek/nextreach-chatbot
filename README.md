@@ -124,7 +124,7 @@ Katmanlı:
 - **Streaming cevap.** Asistan cevabı tek parça geliyor; "yazıyor" animasyonu var ama token akışı yok. Soğuk başlangıçta ilk cevap uzun sürebiliyor; ilk ekleyeceğim şey bu.
 - **Oturum kalıcılığı.** Sayfa yenilenirse sohbet gider. `sessionStorage` ile 10 dakikalık iş.
 - **Sayfaya özel karşılama.** Fiyatlandırma bölümünden gelen ziyaretçiye farklı baloncuk; araştırmaya göre %25-35 daha iyi etkileşim.
-- **Cloudflare Turnstile.** Rate limit ve honeypot yeterli başlangıç; hedefli bot trafiği için görünmez captcha.
+- **Cloudflare Turnstile.** Rate limit, zamanlama ve tur kuralları yeterli başlangıç; hedefli bot trafiği için görünmez captcha.
 - **E-posta bildirimi.** Kapsam dışıydı; Resend ile "yeni sıcak lead" maili 20 dakika.
 - **Admin'de arama ve sayfalama.** 500 kayıt limiti var, arama yok.
 - **Eval seti.** `scripts/test-chat.mts` tek senaryo; 20-30 senaryoyla "yeter" kararının ve skorlamanın tutarlılığını sayıyla ölçmek isterim.
@@ -140,7 +140,7 @@ src/
     page.tsx                  Landing page; "Bize Ulaşın" butonları widget'ı açar
     admin/page.tsx            İç görünüm (sekmeler, filtreler, sağ panel, durum)
     admin/login/page.tsx      Erişim anahtarı girişi
-    api/chat/route.ts         Sohbet turu: honeypot, rate limit, LLM, talep kaydı
+    api/chat/route.ts         Sohbet turu: rate limit, LLM, talep kaydı, devam modu
     api/admin/*               Liste, durum güncelleme, giriş/çıkış
   components/
     ChatWidget.tsx            Başlatıcı, baloncuk, panel, çipler
