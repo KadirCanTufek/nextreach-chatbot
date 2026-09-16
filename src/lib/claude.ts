@@ -23,41 +23,38 @@ function client(): Anthropic {
  * "Yeter" kararını sınırlayan şema. Model bu aracı ancak zorunlu alanları
  * somut içerikle doldurabildiğinde çağırabilir; kod tarafı ayrıca doğrular.
  */
+/**
+ * Model bazen araç parametrelerine etiket artığı sızdırır
+ * (ör. "...</need_summary>\n<parameter name=...>"). İlk kapanış etiketinde kes, kalan etiketleri temizle.
+ */
+function cleanText(value: string): string {
+  return value.split(/<\/[a-z_]+>/i)[0].replace(/<[^>]{1,80}>/g, "").trim();
+}
+const cleanString = () => z.string().transform(cleanText);
+const cleanNullable = () => z.string().nullable().transform((v) => (v === null ? null : cleanText(v)));
+
 export const FinalizeInput = z.object({
-  goal_or_problem: z
-    .string()
-    .min(20, "Hedef veya problem en az bir cümle olmalı.")
+  goal_or_problem: cleanString()
+    .refine((v) => v.length >= 20, "Hedef veya problem en az bir cümle olmalı.")
     .describe("Ziyaretçinin analitikle çözmek istediği problem ya da ulaşmak istediği hedef. Somut ve kendi ifadesine yakın."),
-  current_setup: z
-    .string()
-    .min(3)
+  current_setup: cleanString()
+    .refine((v) => v.length >= 3, "Mevcut durum boş olamaz; bilinmiyorsa 'belirtilmedi'.")
     .describe("Şu an ne kullanıyor: e-ticaret platformu ve raporlamayı nasıl yapıyor (Excel, GA, panel, hiç). Bilinmiyorsa 'belirtilmedi'."),
-  timeline: z
-    .string()
-    .min(3)
+  timeline: cleanString()
+    .refine((v) => v.length >= 3, "Zamanlama boş olamaz; bilinmiyorsa 'belirtilmedi'.")
     .describe("Ne zaman başlamak istiyor, tetikleyen bir olay veya son tarih var mı. Bilinmiyorsa 'belirtilmedi'."),
-  scale: z
-    .string()
-    .nullable()
-    .describe("Ölçek sinyali: aylık sipariş, SKU, ekip büyüklüğü, ciro bandı. Konuşulmadıysa null."),
-  decision_role: z
-    .string()
-    .nullable()
-    .describe("Karar verici mi, değerlendirme yapan mı, başkası adına mı araştırıyor. Konuşulmadıysa null."),
+  scale: cleanNullable().describe("Ölçek sinyali: aylık sipariş, SKU, ekip büyüklüğü, ciro bandı. Konuşulmadıysa null."),
+  decision_role: cleanNullable().describe("Karar verici mi, değerlendirme yapan mı, başkası adına mı araştırıyor. Konuşulmadıysa null."),
   specific_questions: z
-    .array(z.string())
+    .array(cleanString())
+    .transform((arr) => arr.filter((q) => q.length > 0))
     .describe("Ziyaretçinin sorduğu spesifik sorular: fiyat, entegrasyon, deneme, demo vb. Yoksa boş dizi."),
-  need_summary: z
-    .string()
-    .min(40)
+  need_summary: cleanString()
+    .refine((v) => v.length >= 40, "Satış özeti en az 2 cümle olmalı.")
     .describe("Satış ekibi için 2-3 cümlelik özet: kim, ne istiyor, neden şimdi. İlk aramaya hazırlık için yeter olmalı."),
-  visitor_confirmed: z
-    .boolean()
-    .describe("Ziyaretçi özeti onayladı mı? Erken bitişte false olabilir."),
-  ended_early: z
-    .boolean()
-    .describe("Ziyaretçi acelesi olduğunu söyledi, soruları geçti ya da tur sınırına ulaşıldı ise true."),
-  early_reason: z.string().nullable().describe("ended_early true ise kısa neden, değilse null."),
+  visitor_confirmed: z.boolean().describe("Ziyaretçi özeti onayladı mı? Erken bitişte false olabilir."),
+  ended_early: z.boolean().describe("Ziyaretçi acelesi olduğunu söyledi, soruları geçti ya da tur sınırına ulaşıldı ise true."),
+  early_reason: cleanNullable().describe("ended_early true ise kısa neden, değilse null."),
 });
 export type FinalizeInputT = z.infer<typeof FinalizeInput>;
 
