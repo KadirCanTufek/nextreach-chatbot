@@ -4,7 +4,7 @@ import { updateLeadStatus } from "@/lib/db";
 
 export const runtime = "nodejs";
 
-const Body = z.object({ status: z.enum(["new", "contacted", "closed"]) });
+const Body = z.object({ status: z.enum(["waiting", "in_progress", "positive", "negative"]) });
 
 export async function PATCH(req: NextRequest, ctx: RouteContext<"/api/admin/leads/[id]">) {
   const { id } = await ctx.params;

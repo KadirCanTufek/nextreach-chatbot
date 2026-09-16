@@ -8,9 +8,31 @@ export interface ChatMessage {
 }
 
 export type LeadKind = "qualified" | "no_contact" | "spam";
-export type LeadScore = "hot" | "warm" | "cold";
 export type LeadUrgency = "none" | "normal" | "urgent";
-export type LeadStatus = "new" | "contacted" | "closed";
+/** Bekliyor → İşlemde → Olumlu / Olumsuz */
+export type LeadStatus = "waiting" | "in_progress" | "positive" | "negative";
+/** Puan bandı filtresi: 8-10 / 5-7 / 0-4 */
+export type ScoreBand = "high" | "mid" | "low";
+
+/** 10 üzerinden puanın bileşenleri. Toplamı kod hesaplar; model yalnızca bileşen seçer. */
+export interface ScoreBreakdown {
+  need_clarity: number; // 0-3
+  product_fit: number; // 0-3
+  timeline: number; // 0-2
+  authority: number; // 0-1
+  contact: number; // 0-1 (koddan: e-posta ya da telefon var mı)
+}
+export const SCORE_MAX: Record<keyof ScoreBreakdown, number> = { need_clarity: 3, product_fit: 3, timeline: 2, authority: 1, contact: 1 };
+export const SCORE_LABELS: Record<keyof ScoreBreakdown, string> = {
+  need_clarity: "İhtiyaç netliği",
+  product_fit: "Ürün uyumu",
+  timeline: "Zamanlama",
+  authority: "Karar yetkisi",
+  contact: "İletişim bilgisi",
+};
+export function totalScore(b: ScoreBreakdown): number {
+  return Math.min(10, b.need_clarity + b.product_fit + b.timeline + b.authority + b.contact);
+}
 
 /** Sohbetin sonunda modelin doldurduğu ihtiyaç profili (admin'de gösterilen kısım). */
 export interface NeedProfile {
@@ -37,7 +59,8 @@ export interface Lead {
   need_profile: NeedProfile | Record<string, never>;
   ended_early: boolean;
   kind: LeadKind;
-  score: LeadScore | null;
+  score_points: number | null;
+  score_breakdown: ScoreBreakdown | null;
   urgency: LeadUrgency | null;
   score_reason: string | null;
   completeness: string | null;

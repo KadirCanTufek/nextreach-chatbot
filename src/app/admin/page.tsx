@@ -11,13 +11,20 @@ import { AnimatedToastStack, useAnimatedToastStack } from "@/components/motion/a
 import { Drawer } from "@/components/motion/drawer";
 import { Loader } from "@/components/motion/loader";
 import { Tabs, TabsList, TabsTrigger } from "@/components/motion/tabs";
-import type { Lead, LeadKind, LeadScore, LeadStatus, LeadUrgency } from "@/lib/types";
+import type { Lead, LeadKind, LeadStatus, LeadUrgency, ScoreBand, ScoreBreakdown } from "@/lib/types";
+import { SCORE_LABELS, SCORE_MAX } from "@/lib/types";
 
 type Range = "today" | "week" | "all";
 
 const KIND_LABEL: Record<LeadKind, string> = { qualified: "Nitelikli", no_contact: "İletişimsiz", spam: "Spam" };
-const SCORE_LABEL: Record<LeadScore, string> = { hot: "Sıcak", warm: "Ilık", cold: "Soğuk" };
-const STATUS_LABEL: Record<LeadStatus, string> = { new: "Yeni", contacted: "Arandı", closed: "Kapandı" };
+const STATUS_LABEL: Record<LeadStatus, string> = { waiting: "Bekliyor", in_progress: "İşlemde", positive: "Olumlu", negative: "Olumsuz" };
+const STATUS_CLS: Record<LeadStatus, string> = {
+  waiting: "bg-indigo-50 text-indigo-700",
+  in_progress: "bg-amber-50 text-amber-800",
+  positive: "bg-emerald-50 text-emerald-700",
+  negative: "bg-slate-100 text-slate-500",
+};
+const BAND_LABEL: Record<ScoreBand, string> = { high: "8-10", mid: "5-7", low: "0-4" };
 const URGENCY_LABEL: Record<LeadUrgency, string> = { none: "Acil değil", normal: "Normal", urgent: "Acil" };
 
 /** Aciliyet, skor rozetinin rengiyle gösterilir: yeşil acil değil, sarı normal, kırmızı acil. */
@@ -43,22 +50,22 @@ export default function AdminPage() {
 
   const [kind, setKind] = useState<LeadKind>("qualified");
   const [range, setRange] = useState<Range>("today");
-  const [score, setScore] = useState<LeadScore | "all">("all");
+  const [band, setBand] = useState<ScoreBand | "all">("all");
   const [status, setStatus] = useState<LeadStatus | "all">("all");
   const [refreshKey, setRefreshKey] = useState(0);
   const [data, setData] = useState<{ key: string; leads: Lead[]; counts: Record<LeadKind, number> } | null>(null);
   const [selected, setSelected] = useState<Lead | null>(null);
 
-  const filterKey = `${kind}|${range}|${score}|${status}|${refreshKey}`;
+  const filterKey = `${kind}|${range}|${band}|${status}|${refreshKey}`;
   const loading = !data || data.key !== filterKey;
   const leads = data?.leads ?? [];
   const counts = data?.counts ?? EMPTY_COUNTS;
 
   useEffect(() => {
     let cancelled = false;
-    const key = `${kind}|${range}|${score}|${status}|${refreshKey}`;
+    const key = `${kind}|${range}|${band}|${status}|${refreshKey}`;
     const params = new URLSearchParams({ kind, range });
-    if (score !== "all") params.set("score", score);
+    if (band !== "all") params.set("band", band);
     if (status !== "all") params.set("status", status);
     fetch(`/api/admin/leads?${params}`)
       .then(async (res) => {
@@ -75,7 +82,7 @@ export default function AdminPage() {
     return () => {
       cancelled = true;
     };
-  }, [kind, range, score, status, refreshKey, router]);
+  }, [kind, range, band, status, refreshKey, router]);
 
   async function changeStatus(lead: Lead, next: LeadStatus) {
     if (lead.status === next) return;
@@ -152,20 +159,20 @@ export default function AdminPage() {
                 <TabsTrigger value="all">Tümü</TabsTrigger>
               </TabsList>
             </Tabs>
-            <Tabs value={score} onValueChange={(v) => setScore(v as LeadScore | "all")} variant="pill">
+            <Tabs value={band} onValueChange={(v) => setBand(v as ScoreBand | "all")} variant="pill">
               <TabsList className="border border-slate-200">
-                <TabsTrigger value="all">Tüm skorlar</TabsTrigger>
-                <TabsTrigger value="hot">Sıcak</TabsTrigger>
-                <TabsTrigger value="warm">Ilık</TabsTrigger>
-                <TabsTrigger value="cold">Soğuk</TabsTrigger>
+                <TabsTrigger value="all">Tüm puanlar</TabsTrigger>
+                {(Object.keys(BAND_LABEL) as ScoreBand[]).map((b) => (
+                  <TabsTrigger key={b} value={b}>{BAND_LABEL[b]}</TabsTrigger>
+                ))}
               </TabsList>
             </Tabs>
             <Tabs value={status} onValueChange={(v) => setStatus(v as LeadStatus | "all")} variant="pill">
               <TabsList className="border border-slate-200">
                 <TabsTrigger value="all">Tüm durumlar</TabsTrigger>
-                <TabsTrigger value="new">Yeni</TabsTrigger>
-                <TabsTrigger value="contacted">Arandı</TabsTrigger>
-                <TabsTrigger value="closed">Kapandı</TabsTrigger>
+                {(Object.keys(STATUS_LABEL) as LeadStatus[]).map((st) => (
+                  <TabsTrigger key={st} value={st}>{STATUS_LABEL[st]}</TabsTrigger>
+                ))}
               </TabsList>
             </Tabs>
           </div>
@@ -189,7 +196,7 @@ export default function AdminPage() {
                 <th className="px-4 py-3 font-medium">Kim</th>
                 <th className="px-4 py-3 font-medium hidden md:table-cell">Şirket</th>
                 <th className="px-4 py-3 font-medium hidden lg:table-cell">İhtiyaç</th>
-                <th className="px-4 py-3 font-medium">Skor</th>
+                <th className="px-4 py-3 font-medium">Puan</th>
                 <th className="px-4 py-3 font-medium">Durum</th>
               </tr>
             </thead>
@@ -266,7 +273,7 @@ export default function AdminPage() {
 }
 
 function ScoreBadge({ lead, size = "sm" }: { lead: Lead; size?: "sm" | "md" }) {
-  if (!lead.score) return <span className="text-slate-400 text-xs">—</span>;
+  if (lead.score_points === null) return <span className="text-slate-400 text-xs">—</span>;
   const u = lead.urgency ?? "none";
   return (
     <AnimatedBadge
@@ -274,16 +281,43 @@ function ScoreBadge({ lead, size = "sm" }: { lead: Lead; size?: "sm" | "md" }) {
       size={size}
       icon={urgencyIcon(u)}
       pulse={u === "urgent"}
-      contentKey={`${lead.score}-${u}`}
-      title={`Aciliyet: ${URGENCY_LABEL[u]}`}
+      contentKey={`${lead.score_points}-${u}`}
+      title={`Puan ${lead.score_points}/10 · Aciliyet: ${URGENCY_LABEL[u]}`}
+      className="tabular-nums"
     >
-      {SCORE_LABEL[lead.score]}
+      {lead.score_points}/10
     </AnimatedBadge>
   );
 }
 
+function ScoreBreakdownBars({ breakdown }: { breakdown: ScoreBreakdown }) {
+  const reduce = useReducedMotion();
+  return (
+    <dl className="grid grid-cols-[130px_1fr_36px] items-center gap-x-3 gap-y-2 text-sm">
+      {(Object.keys(SCORE_MAX) as (keyof ScoreBreakdown)[]).map((k, i) => {
+        const value = breakdown[k] ?? 0;
+        const max = SCORE_MAX[k];
+        return (
+          <div key={k} className="contents">
+            <dt className="text-slate-500">{SCORE_LABELS[k]}</dt>
+            <dd className="h-2 rounded-full bg-slate-100 overflow-hidden">
+              <motion.div
+                initial={reduce ? false : { width: 0 }}
+                animate={{ width: `${(value / max) * 100}%` }}
+                transition={{ delay: reduce ? 0 : 0.05 * i, duration: 0.4, ease: "easeOut" }}
+                className={`h-full rounded-full ${value === max ? "bg-indigo-600" : value === 0 ? "bg-slate-300" : "bg-indigo-400"}`}
+              />
+            </dd>
+            <dd className="tabular-nums text-right text-slate-700">{value}/{max}</dd>
+          </div>
+        );
+      })}
+    </dl>
+  );
+}
+
 function StatusPill({ status }: { status: LeadStatus }) {
-  const cls = status === "new" ? "bg-indigo-50 text-indigo-700" : status === "contacted" ? "bg-slate-100 text-slate-700" : "bg-slate-50 text-slate-400";
+  const cls = STATUS_CLS[status];
   return (
     <AnimatePresence mode="wait" initial={false}>
       <motion.span
@@ -338,10 +372,11 @@ function LeadPanel({ lead, onClose, onStatus }: { lead: Lead; onClose: () => voi
           {lead.contact_inferred && <span className="text-xs text-indigo-700 bg-indigo-50 rounded-full px-2 py-0.5">İletişim sohbetten çıkarıldı</span>}
         </section>
 
-        {lead.score_reason && (
+        {(lead.score_breakdown || lead.score_reason) && (
           <section>
-            <h3 className={h3}>Değerlendirme</h3>
-            <p className="text-sm text-slate-700 leading-relaxed">{lead.score_reason}</p>
+            <h3 className={h3}>Puan ve gerekçe</h3>
+            {lead.score_breakdown && <ScoreBreakdownBars breakdown={lead.score_breakdown} />}
+            {lead.score_reason && <p className="mt-3 text-sm text-slate-700 leading-relaxed">{lead.score_reason}</p>}
           </section>
         )}
 

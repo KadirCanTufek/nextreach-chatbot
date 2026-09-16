@@ -7,8 +7,8 @@ export const runtime = "nodejs";
 const Query = z.object({
   kind: z.enum(["qualified", "no_contact", "spam"]).optional(),
   range: z.enum(["today", "week", "all"]).optional(),
-  score: z.enum(["hot", "warm", "cold"]).optional(),
-  status: z.enum(["new", "contacted", "closed"]).optional(),
+  band: z.enum(["high", "mid", "low"]).optional(),
+  status: z.enum(["waiting", "in_progress", "positive", "negative"]).optional(),
 });
 
 export async function GET(req: NextRequest) {

@@ -32,6 +32,7 @@ Yararlı komutlar:
 | Komut | Ne yapar |
 |---|---|
 | `npm run test:chat` | Veritabanı olmadan yalnızca sohbet motorunu dener: senaryolu bir ziyaretçi ile uçtan uca konuşma, profil ve analiz çıktısı. `-- --scenario=decline` ile iletişim vermeyen ziyaretçi + devam modu senaryosu |
+| `npm run db:migrate` | Var olan veritabanını yeni şemaya taşır (tekrar çalıştırılabilir); `db:setup` bunu zaten çağırır |
 | `npm run typecheck` / `npm run lint` | Tip ve lint kontrolü |
 
 Deploy: Vercel'e bağlayın, aynı üç değişkeni Environment Variables'a girin. Şemayı bir kez `npm run db:setup` ile uygulayın. Fonksiyon bölgesi `vercel.json` ile Frankfurt'a (fra1) sabitlendi; Neon da aynı bölgede.
@@ -86,17 +87,27 @@ Sıcak, profesyonel, "siz". Kısa cümleler, emoji yok, pazarlama dili yok. Mera
 
 ### 3. Satış ekibi iyi lead'i kötüsünden nasıl ayırt edecek?
 
-Sohbet bitince ikinci bir Claude çağrısı (yapılandırılmış çıktı) talebi değerlendirir. **İki kaynağı birlikte** kullanır: kodun hesapladığı **alan doluluk oranı** (8 alan) ve **sohbetin tamamındaki niyet**. Tek tarafa bağlı kalmaz: doluluk yüksek ama niyet zayıfsa düşürür, doluluk düşük ama zamanlama netse yükseltir. Profilde eksik kalan iletişim bilgisi sohbette geçiyorsa buradan çıkarılır ve admin'de "sohbetten" etiketiyle görünür.
+**10 üzerinden puan, şeffaf rubrikle.** İlk sürümde Sıcak/Ilık/Soğuk etiketi vardı; kaba geldi ve "neden sıcak" sorusuna cevap vermiyordu. Şimdi sohbet bitince ikinci bir Claude çağrısı (yapılandırılmış çıktı) dört bileşeni puanlıyor, beşinciyi ve toplamı kod hesaplıyor:
 
-Çıktı: **Sıcak / Ilık / Soğuk** etiketi, **aciliyet** (acil / normal / acil değil) ve tek cümlelik **gerekçe**. Sıcak = e-ticaret firması + net problem + yakın zamanlama.
+| Bileşen | Puan | Ne bakılıyor |
+|---|---|---|
+| İhtiyaç netliği | 0-3 | Genel "raporlama" mı, somut problem mi, ölçülebilir etkisi söylendi mi |
+| Ürün uyumu | 0-3 | Gerçek bir e-ticaret firması mı, ölçek, platform, ihtiyaç ürünle örtüşüyor mu |
+| Zamanlama | 0-2 | Belirsiz / bu yıl / bu ay ya da tetikleyici var |
+| Karar yetkisi | 0-1 | Karar verici ya da ortak karar verici mi |
+| İletişim bilgisi | 0-1 | Koddan: e-posta ya da telefon var mı |
+
+Model **sayı uydurmaz, bileşen seçer**; toplamı kod toplar. Değerlendirme iki kaynağa birlikte dayanır: profil alanları ve doluluk oranı, sohbetin tamamındaki niyet. Alanlar dolu ama niyet zayıfsa düşer, alanlar eksik ama zamanlama netse yükselir. Ziyaretçi iletişim bilgisini sonradan bırakırsa (devam modu) iletişim bileşeni 1'e çıkar ve toplam güncellenir.
+
+Çıktı: rozette **7/10** gibi bir puan, detay panelinde bileşen çubukları ve tek cümlelik **gerekçe**; ayrıca **aciliyet** (acil / normal / acil değil). Filtre bantları: 8-10, 5-7, 0-4.
 
 ### 4. Admin view'de ne var?
 
 - **Üç sekme:** Nitelikli · İletişimsiz · Spam. Ekip gün içinde yalnızca ilkine bakar; diğerleri kaybolmaz ama önüne çıkmaz. Sekme sayaçları canlı.
-- **Filtreler:** Bugün / Bu hafta / Tümü, skor, durum.
-- **Skor rozeti, rengi aciliyeti gösterir:** yeşil acil değil, sarı normal, kırmızı acil (acil olanlar hafifçe nabız atar). Üstte renk rehberi var. Tek rozetle iki bilgi.
-- **Satıra tıkla → sağdan panel** (Notion tarzı): iletişim bilgileri tıklanabilir (mailto / tel), satış için özet, ihtiyaç profili, değerlendirme gerekçesi, doluluk, tam sohbet.
-- **Durum takibi:** Yeni → Arandı → Kapandı; değişiklikte kısa bir bildirim.
+- **Filtreler:** Bugün / Bu hafta / Tümü, puan bandı, durum.
+- **Puan rozeti, rengi aciliyeti gösterir:** rozette 7/10 gibi puan; yeşil acil değil, sarı normal, kırmızı acil (acil olanlar hafifçe nabız atar). Üstte renk rehberi var. Tek rozetle iki bilgi.
+- **Satıra tıkla → sağdan panel** (Notion tarzı): iletişim bilgileri tıklanabilir (mailto / tel), puan bileşenleri çubuklarla, gerekçe, satış için özet, ihtiyaç profili, doluluk, tam sohbet.
+- **Durum takibi:** Bekliyor → İşlemde → Olumlu / Olumsuz. "Bekliyor" kimse dokunmadı demek; "İşlemde" ekip iletişime geçti; sonuç iki uçlu, böylece ekip kaç talebin müşteriye döndüğünü görür. Değişiklikte kısa bir bildirim.
 
 ### 5. Kötü niyetli kullanım (spam, boş talep, bot)
 
@@ -154,6 +165,7 @@ src/
     schema.sql                Veri şeması
   proxy.ts                    /admin ve /api/admin koruması
 scripts/
-  db-setup.mjs                Şemayı uygular
+  db-setup.mjs                Şemayı uygular, göçleri çalıştırır
+  db-migrate.mjs              Göçler (skor → 10 puan + rubrik, durum adları)
   test-chat.mts               DB'siz uçtan uca sohbet testi
 ```

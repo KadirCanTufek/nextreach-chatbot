@@ -1,7 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
-import type { ChatMessage, NeedProfile } from "./types";
+import type { ChatMessage, NeedProfile, ScoreBreakdown } from "./types";
+import { totalScore } from "./types";
 import { ASSISTANT_NAME, DEFAULT_SALES_EMAIL, GREETING, GREETING_CHIPS } from "./chat-config";
 
 export const MODEL = "claude-sonnet-5";
@@ -503,9 +504,32 @@ export async function runFollowUpTurn(history: ChatMessage[], hasContact: boolea
 const AnalysisOutput = z.object({
   is_spam: z.boolean().describe("Anlamsız, alakasız, otomatik ya da kötü niyetli içerik mi?"),
   spam_reason: z.string().nullable(),
-  score: z.enum(["hot", "warm", "cold"]).describe("Sıcak: e-ticaret firması + net problem + yakın zamanlama. Ilık: ilgi net ama zamanlama ya da problem belirsiz. Soğuk: araştırma, öğrenci, alakasız, ya da çok eksik."),
+  need_clarity: z
+    .number()
+    .int()
+    .min(0)
+    .max(3)
+    .describe("İhtiyaç netliği: 0 belirsiz ya da yok; 1 genel ('raporlama lazım'); 2 somut problem ('ürün bazlı kârlılığı göremiyoruz'); 3 somut problem + ölçülebilir etki ya da örnek ('haftada bir gün Excel'e gidiyor')."),
+  product_fit: z
+    .number()
+    .int()
+    .min(0)
+    .max(3)
+    .describe("Ürün uyumu (NextReach orta ölçekli e-ticaret firmalarına analitik dashboard'u satar): 0 alakasız, öğrenci, rakip ya da e-ticaret değil; 1 e-ticaret ama çok küçük ya da belirsiz; 2 orta ölçekli e-ticaret; 3 orta ölçekli + bilinen platform + çok kanallı ya da analitik ihtiyacı doğrudan ürünle örtüşüyor."),
+  timeline_score: z
+    .number()
+    .int()
+    .min(0)
+    .max(2)
+    .describe("Zamanlama: 0 belirsiz ya da sadece araştırıyor; 1 bu yıl içinde; 2 bu ay ya da 1-3 ay içinde ya da net bir tetikleyici (sezon, mevcut aracın bitmesi)."),
+  authority: z
+    .number()
+    .int()
+    .min(0)
+    .max(1)
+    .describe("Karar yetkisi: 1 karar verici ya da ortak karar verici (sahip, ortak, yönetici); 0 belirsiz ya da başkası adına araştırıyor."),
   urgency: z.enum(["none", "normal", "urgent"]).describe("Ziyaretçinin zaman baskısı: urgent = bu ay / sezon öncesi / mevcut araç bitiyor; normal = birkaç ay içinde; none = belirsiz ya da sadece araştırıyor."),
-  score_reason: z.string().describe("Satış ekibi için tek cümle: neden bu skor ve aciliyet."),
+  score_reason: z.string().describe("Satış ekibi için tek cümle: puanı en çok ne yükseltti ya da düşürdü, aciliyet neden böyle."),
   extracted_email: z.string().nullable().describe("Profilde yoksa ama sohbette geçiyorsa e-posta; yoksa null."),
   extracted_phone: z.string().nullable().describe("Profilde yoksa ama sohbette geçiyorsa telefon; yoksa null."),
   extracted_name: z.string().nullable().describe("Profilde yoksa ama sohbette geçiyorsa isim; yoksa null."),
@@ -529,6 +553,18 @@ export function computeCompleteness(profile: FinalizeInputT): number {
   return Math.round((filled / fields.length) * 100) / 100;
 }
 
+/** Puan: modelin bileşenleri + koddan gelen iletişim bileşeni. Toplamı kod hesaplar. */
+export function scoreFromAnalysis(a: AnalysisOutputT, hasContact: boolean): { points: number; breakdown: ScoreBreakdown } {
+  const breakdown: ScoreBreakdown = {
+    need_clarity: a.need_clarity,
+    product_fit: a.product_fit,
+    timeline: a.timeline_score,
+    authority: a.authority,
+    contact: hasContact ? 1 : 0,
+  };
+  return { points: totalScore(breakdown), breakdown };
+}
+
 export function toNeedProfile(profile: FinalizeInputT): NeedProfile {
   return {
     goal_or_problem: profile.goal_or_problem,
@@ -547,7 +583,7 @@ export async function analyzeLead(profile: FinalizeInputT, transcript: ChatMessa
     model: MODEL,
     max_tokens: 2000,
     system:
-      "Sen NextReach satış ekibi için lead değerlendirme analistisin. NextReach orta ölçekli e-ticaret firmalarına analitik dashboard'u satar. Değerlendirmeyi iki kaynağa birlikte dayandır: (1) alan doluluk oranı ve alan içerikleri, (2) sohbetin tamamındaki bağlam ve niyet. Tek tarafa bağlı kalma: doluluk yüksek ama niyet zayıfsa düşür; doluluk düşük ama niyet ve zamanlama netse yükselt. Profilde eksik olan isim/şirket/e-posta/telefon sohbette geçiyorsa çıkar. Kısa ve gerekçeli ol.",
+      "Sen NextReach satış ekibi için lead değerlendirme analistisin. NextReach orta ölçekli e-ticaret firmalarına analitik dashboard'u satar. Puanı sen vermezsin; rubrikteki dört bileşeni seçersin (ihtiyaç netliği 0-3, ürün uyumu 0-3, zamanlama 0-2, karar yetkisi 0-1), iletişim bileşenini ve toplamı kod hesaplar. Her bileşeni iki kaynağa birlikte dayandır: (1) profil alanları ve doluluk oranı, (2) sohbetin tamamındaki bağlam ve niyet. Tek tarafa bağlı kalma: alanlar dolu ama niyet zayıfsa düşür; alanlar eksik ama niyet ve zamanlama netse yükselt. Profilde eksik olan isim/şirket/e-posta/telefon sohbette geçiyorsa çıkar. Gerekçe tek cümle.",
     messages: [
       {
         role: "user",
@@ -569,7 +605,10 @@ ${transcriptText}`,
     return {
       is_spam: false,
       spam_reason: null,
-      score: "warm",
+      need_clarity: 1,
+      product_fit: 1,
+      timeline_score: 0,
+      authority: 0,
       urgency: "none",
       score_reason: "Otomatik analiz başarısız oldu; manuel inceleme gerekli.",
       extracted_email: null,

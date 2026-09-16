@@ -1,6 +1,6 @@
 // DB olmadan yalnızca Claude katmanını dener: `npm run test:chat`
 // Ziyaretçi, asistanın sorusuna anahtar kelimeyle tepki veren basit bir kural motoru.
-import { GREETING, analyzeLead, computeCompleteness, runChatTurn, runFollowUpTurn } from "../src/lib/claude";
+import { GREETING, analyzeLead, computeCompleteness, runChatTurn, runFollowUpTurn, scoreFromAnalysis } from "../src/lib/claude";
 import type { ChatMessage } from "../src/lib/types";
 
 // Senaryo: `npm run test:chat -- --scenario=decline` → iletişim bilgisi vermeyen ziyaretçi + devam modu
@@ -106,3 +106,5 @@ const t1 = Date.now();
 const analysis = await analyzeLead(finalized, messages, completeness);
 console.log(`\n=== Analiz (${Date.now() - t1} ms, doluluk ${Math.round(completeness * 100)}%) ===`);
 console.log(JSON.stringify(analysis, null, 2));
+const scored = scoreFromAnalysis(analysis, Boolean(finalized.email || finalized.phone));
+console.log(`\n=== Puan: ${scored.points}/10 ===`, JSON.stringify(scored.breakdown));

@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { analyzeLead, computeCompleteness, runChatTurn, runFollowUpTurn, toNeedProfile } from "@/lib/claude";
+import { analyzeLead, computeCompleteness, runChatTurn, runFollowUpTurn, scoreFromAnalysis, toNeedProfile } from "@/lib/claude";
 import { addLeadContact, getLeadForSession, insertLead, updateLeadTranscript } from "@/lib/db";
 import { LIMITS, checkLeadRate, checkMessageRate, getClientIp } from "@/lib/rate-limit";
 import type { ChatResponse, LeadKind } from "@/lib/types";
@@ -114,6 +114,7 @@ async function handle(req: NextRequest) {
   let kind: LeadKind = "qualified";
   if (analysis.is_spam) kind = "spam";
   else if (!hasContact) kind = "no_contact";
+  const scored = kind === "spam" ? null : scoreFromAnalysis(analysis, hasContact);
 
   const newLeadId = await insertLead({
     sessionId,
@@ -128,7 +129,8 @@ async function handle(req: NextRequest) {
     needProfile: toNeedProfile(profile),
     endedEarly: profile.ended_early,
     kind,
-    score: kind === "spam" ? null : analysis.score,
+    scorePoints: scored?.points ?? null,
+    scoreBreakdown: scored?.breakdown ?? null,
     urgency: kind === "spam" ? null : analysis.urgency,
     scoreReason: analysis.is_spam ? analysis.spam_reason : analysis.score_reason,
     completeness,

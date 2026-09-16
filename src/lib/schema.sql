@@ -20,13 +20,14 @@ CREATE TABLE IF NOT EXISTS leads (
 
   -- Sınıflandırma
   kind             text NOT NULL CHECK (kind IN ('qualified', 'no_contact', 'spam')),
-  score            text CHECK (score IN ('hot', 'warm', 'cold')),
+  score_points     smallint CHECK (score_points IS NULL OR (score_points >= 0 AND score_points <= 10)),
+  score_breakdown  jsonb,
   urgency          text CHECK (urgency IN ('none', 'normal', 'urgent')),
   score_reason     text,
   completeness     numeric(3,2),
 
   -- Takip
-  status           text NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'contacted', 'closed')),
+  status           text NOT NULL DEFAULT 'waiting' CHECK (status IN ('waiting', 'in_progress', 'positive', 'negative')),
   transcript       jsonb NOT NULL DEFAULT '[]'::jsonb
 );
 

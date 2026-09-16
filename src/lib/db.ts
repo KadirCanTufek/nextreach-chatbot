@@ -1,5 +1,5 @@
 import { neon } from "@neondatabase/serverless";
-import type { ChatMessage, Lead, LeadKind, LeadScore, LeadStatus, LeadUrgency, NeedProfile } from "./types";
+import type { ChatMessage, Lead, LeadKind, LeadStatus, LeadUrgency, NeedProfile, ScoreBand, ScoreBreakdown } from "./types";
 
 function getSql() {
   const url = process.env.DATABASE_URL;
@@ -20,7 +20,8 @@ export interface NewLead {
   needProfile: NeedProfile;
   endedEarly: boolean;
   kind: LeadKind;
-  score: LeadScore | null;
+  scorePoints: number | null;
+  scoreBreakdown: ScoreBreakdown | null;
   urgency: LeadUrgency | null;
   scoreReason: string | null;
   completeness: number;
@@ -33,12 +34,13 @@ export async function insertLead(lead: NewLead): Promise<string> {
     INSERT INTO leads (
       session_id, ip, name, email, phone, company, store_size, contact_inferred,
       need_summary, need_profile, ended_early,
-      kind, score, urgency, score_reason, completeness, transcript
+      kind, score_points, score_breakdown, urgency, score_reason, completeness, transcript
     ) VALUES (
       ${lead.sessionId}, ${lead.ip}, ${lead.name}, ${lead.email}, ${lead.phone},
       ${lead.company}, ${lead.storeSize}, ${lead.contactInferred},
       ${lead.needSummary}, ${JSON.stringify(lead.needProfile)}::jsonb, ${lead.endedEarly},
-      ${lead.kind}, ${lead.score}, ${lead.urgency}, ${lead.scoreReason},
+      ${lead.kind}, ${lead.scorePoints}, ${lead.scoreBreakdown ? JSON.stringify(lead.scoreBreakdown) : null}::jsonb,
+      ${lead.urgency}, ${lead.scoreReason},
       ${lead.completeness}, ${JSON.stringify(lead.transcript)}::jsonb
     )
     RETURNING id
@@ -49,7 +51,7 @@ export async function insertLead(lead: NewLead): Promise<string> {
 export interface LeadFilter {
   kind?: LeadKind;
   range?: "today" | "week" | "all";
-  score?: LeadScore;
+  band?: ScoreBand;
   status?: LeadStatus;
 }
 
@@ -57,13 +59,13 @@ export async function listLeads(filter: LeadFilter): Promise<Lead[]> {
   const sql = getSql();
   const kind = filter.kind ?? "qualified";
   const range = filter.range ?? "all";
-  const score = filter.score ?? null;
+  const band = filter.band ?? null;
   const status = filter.status ?? null;
 
   const rows = await sql`
     SELECT id, created_at, session_id, ip, name, email, phone, company, store_size,
            contact_inferred, need_summary, need_profile, ended_early,
-           kind, score, urgency, score_reason, completeness, status, transcript
+           kind, score_points, score_breakdown, urgency, score_reason, completeness, status, transcript
     FROM leads
     WHERE kind = ${kind}
       AND (
@@ -71,7 +73,12 @@ export async function listLeads(filter: LeadFilter): Promise<Lead[]> {
         OR (${range} = 'today' AND created_at >= date_trunc('day', now() AT TIME ZONE 'Europe/Istanbul') AT TIME ZONE 'Europe/Istanbul')
         OR (${range} = 'week'  AND created_at >= now() - interval '7 days')
       )
-      AND (${score}::text IS NULL OR score = ${score})
+      AND (
+        ${band}::text IS NULL
+        OR (${band} = 'high' AND score_points >= 8)
+        OR (${band} = 'mid'  AND score_points BETWEEN 5 AND 7)
+        OR (${band} = 'low'  AND score_points <= 4)
+      )
       AND (${status}::text IS NULL OR status = ${status})
     ORDER BY created_at DESC
     LIMIT 500
@@ -102,7 +109,10 @@ export async function getLeadForSession(id: string, sessionId: string): Promise<
   return { id: rows[0].id as string, hasContact: Boolean(rows[0].has_contact) };
 }
 
-/** Sonradan bırakılan iletişim bilgisini talebe ekler; İletişimsiz talep Nitelikli olur. */
+/**
+ * Sonradan bırakılan iletişim bilgisini talebe ekler; İletişimsiz talep Nitelikli olur.
+ * Puanın "iletişim" bileşeni 0 ise 1'e çıkar ve toplam güncellenir.
+ */
 export async function addLeadContact(id: string, sessionId: string, email: string | null, phone: string | null): Promise<boolean> {
   const sql = getSql();
   const rows = await sql`
@@ -110,7 +120,13 @@ export async function addLeadContact(id: string, sessionId: string, email: strin
       email = COALESCE(${email}, email),
       phone = COALESCE(${phone}, phone),
       contact_inferred = false,
-      kind = CASE WHEN kind = 'no_contact' THEN 'qualified' ELSE kind END
+      kind = CASE WHEN kind = 'no_contact' THEN 'qualified' ELSE kind END,
+      score_points = CASE
+        WHEN score_points IS NOT NULL AND COALESCE((score_breakdown->>'contact')::int, 1) = 0 THEN LEAST(10, score_points + 1)
+        ELSE score_points END,
+      score_breakdown = CASE
+        WHEN score_breakdown IS NOT NULL AND (score_breakdown->>'contact')::int = 0 THEN jsonb_set(score_breakdown, '{contact}', '1'::jsonb)
+        ELSE score_breakdown END
     WHERE id = ${id}::uuid AND session_id = ${sessionId}
     RETURNING id`;
   return rows.length > 0;

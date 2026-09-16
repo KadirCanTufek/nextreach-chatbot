@@ -9,7 +9,8 @@
     "lint": "eslint",
     "db:setup": "node --env-file=.env.local scripts/db-setup.mjs",
     "typecheck": "tsc --noEmit",
-    "test:chat": "node --env-file=.env.local --import tsx scripts/test-chat.mts"
+    "test:chat": "node --env-file=.env.local --import tsx scripts/test-chat.mts",
+    "db:migrate": "node --env-file=.env.local scripts/db-migrate.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",

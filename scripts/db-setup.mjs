@@ -1,6 +1,7 @@
-// Şemayı Neon'a uygular: `npm run db:setup`
+// Şemayı Neon'a uygular ve gerekli göçleri çalıştırır: `npm run db:setup`
 import { readFileSync } from "node:fs";
 import { neon } from "@neondatabase/serverless";
+import { migrate } from "./db-migrate.mjs";
 
 const url = process.env.DATABASE_URL;
 if (!url) {
@@ -22,3 +23,5 @@ for (const statement of statements) {
   await sql.query(statement);
 }
 console.log(`Şema uygulandı (${statements.length} ifade).`);
+const log = await migrate(sql);
+console.log(log.length ? `Göç: ${log.join("; ")}` : "Göç gerekmedi.");
