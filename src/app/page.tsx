@@ -1,8 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
-import ChatWidget from "@/components/ChatWidget";
+
+// Widget yalnızca istemcide render edilir: ilk durumu sessionStorage'dan okur.
+const ChatWidget = dynamic(() => import("@/components/ChatWidget"), { ssr: false });
 
 const FEATURES = [
   { title: "Kârlılık, ürün bazında", text: "Hangi ürün gerçekten kazandırıyor, hangisi reklam bütçesini yiyor: tek ekranda." },

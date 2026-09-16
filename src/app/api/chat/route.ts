@@ -1,9 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { analyzeLead, computeCompleteness, runChatTurn, runFollowUpTurn, scoreFromAnalysis, toNeedProfile } from "@/lib/claude";
+import { analyzeLead, computeCompleteness, runChatTurn, runFollowUpTurn, scoreFromAnalysis, toNeedProfile, type TurnHooks } from "@/lib/claude";
 import { addLeadContact, getLeadForSession, insertLead, updateLeadTranscript } from "@/lib/db";
 import { LIMITS, checkLeadRate, checkMessageRate, getClientIp } from "@/lib/rate-limit";
-import type { ChatResponse, LeadKind } from "@/lib/types";
+import type { ChatMessage, ChatResponse, LeadKind } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -25,21 +25,17 @@ const Body = z.object({
     .min(1)
     .max(LIMITS.maxMessagesPerSession),
 });
+type BodyT = z.infer<typeof Body>;
 
-function reply(body: ChatResponse, status = 200) {
-  return NextResponse.json(body, { status });
-}
-
+/**
+ * Cevap NDJSON akışı olarak döner: her satır bir olay.
+ *   {"t":"delta","text":"..."}  metin parçası
+ *   {"t":"reset"}               ekrana yazılanı sil (reddedilen araç denemesi)
+ *   {"t":"end", ...ChatResponse} son durum (çipler, done, leadId, contactAdded, ended)
+ *   {"t":"error","message":"..."}
+ * Ön kontroller (geçersiz istek, rate limit) akış başlamadan JSON olarak döner.
+ */
 export async function POST(req: NextRequest) {
-  try {
-    return await handle(req);
-  } catch (err) {
-    console.error("[chat] beklenmeyen hata", err);
-    return reply({ reply: "Şu an cevap veremiyorum. Lütfen bir dakika sonra tekrar deneyin.", done: false }, 503);
-  }
-}
-
-async function handle(req: NextRequest) {
   const ip = getClientIp(req.headers);
 
   let json: unknown;
@@ -52,61 +48,95 @@ async function handle(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Geçersiz istek.", issues: parsed.error.issues }, { status: 400 });
   }
-  const { sessionId, startedAt, leadId, messages } = parsed.data;
-
-  const lastMessage = messages[messages.length - 1];
+  const body = parsed.data;
+  const lastMessage = body.messages[body.messages.length - 1];
   if (lastMessage.role !== "user" || !lastMessage.content.trim()) {
     return NextResponse.json({ error: "Son mesaj ziyaretçiden gelmeli." }, { status: 400 });
   }
 
   const rate = await checkMessageRate(ip);
-  if (!rate.ok) return reply({ reply: rate.reason, done: !!leadId, leadId }, 429);
+  if (!rate.ok) {
+    const res: ChatResponse = { reply: rate.reason, done: Boolean(body.leadId), leadId: body.leadId };
+    return NextResponse.json(res, { status: 429 });
+  }
 
-  // --- Devam modu: talep zaten iletildi, soru-cevap ve geç iletişim bilgisi ---
-  if (leadId) {
-    const lead = await getLeadForSession(leadId, sessionId);
+  let lead: { id: string; hasContact: boolean } | null = null;
+  if (body.leadId) {
+    lead = await getLeadForSession(body.leadId, body.sessionId);
     if (!lead) return NextResponse.json({ error: "Talep bulunamadı." }, { status: 400 });
-
-    const follow = await runFollowUpTurn(messages, lead.hasContact);
-    if (follow.type === "ended") {
-      await updateLeadTranscript(leadId, sessionId, [...messages, { role: "assistant", content: follow.text }]);
-      return reply({ reply: follow.text, done: true, leadId, ended: follow.reason });
-    }
-    let contactAdded = false;
-    if (follow.type === "contact") {
-      contactAdded = await addLeadContact(leadId, sessionId, follow.contact.email, follow.contact.phone);
-    }
-    await updateLeadTranscript(leadId, sessionId, [...messages, { role: "assistant", content: follow.text }]);
-    return reply({
-      reply: follow.text,
-      chips: follow.type === "reply" ? follow.chips : [],
-      done: true,
-      leadId,
-      ...(contactAdded ? { contactAdded: true } : {}),
-    });
   }
 
-  const turn = await runChatTurn(messages);
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (obj: unknown) => controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`));
+      const hooks: TurnHooks = {
+        onDelta: (text) => send({ t: "delta", text }),
+        onReset: () => send({ t: "reset" }),
+      };
+      try {
+        const result = lead ? await handleFollowUp(body, lead, hooks) : await handleTurn(body, ip, hooks);
+        send({ t: "end", ...result });
+      } catch (err) {
+        console.error("[chat] beklenmeyen hata", err);
+        send({ t: "error", message: "Şu an cevap veremiyorum. Lütfen bir dakika sonra tekrar deneyin." });
+      } finally {
+        controller.close();
+      }
+    },
+  });
 
-  if (turn.type === "reply") {
-    return reply({ reply: turn.text, chips: turn.chips, done: false });
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no",
+    },
+  });
+}
+
+/** Devam modu: talep zaten iletildi; soru-cevap ve geç iletişim bilgisi. */
+async function handleFollowUp(body: BodyT, lead: { id: string; hasContact: boolean }, hooks: TurnHooks): Promise<ChatResponse> {
+  const { sessionId, messages } = body;
+  const follow = await runFollowUpTurn(messages, lead.hasContact, hooks);
+  const transcript: ChatMessage[] = [...messages, { role: "assistant", content: follow.text }];
+
+  if (follow.type === "ended") {
+    await updateLeadTranscript(lead.id, sessionId, transcript);
+    return { reply: follow.text, done: true, leadId: lead.id, ended: follow.reason };
   }
-  if (turn.type === "ended") {
-    // Kapsam dışı ısrar ya da hakaret: talep oluşmaz, kayıt yok.
-    return reply({ reply: turn.text, done: true, ended: turn.reason });
+
+  let contactAdded = false;
+  if (follow.type === "contact") {
+    contactAdded = await addLeadContact(lead.id, sessionId, follow.contact.email, follow.contact.phone);
   }
+  await updateLeadTranscript(lead.id, sessionId, transcript);
+  return {
+    reply: follow.text,
+    chips: follow.type === "reply" ? follow.chips : [],
+    done: true,
+    leadId: lead.id,
+    ...(contactAdded ? { contactAdded: true } : {}),
+  };
+}
+
+/** Ana akış: ihtiyacı derinleştir; model "yeter" deyince talebi kaydet. */
+async function handleTurn(body: BodyT, ip: string, hooks: TurnHooks): Promise<ChatResponse> {
+  const { sessionId, startedAt, messages } = body;
+  const turn = await runChatTurn(messages, hooks);
+
+  if (turn.type === "reply") return { reply: turn.text, chips: turn.chips, done: false };
+  if (turn.type === "ended") return { reply: turn.text, done: true, ended: turn.reason }; // kapsam dışı: kayıt yok
 
   // --- Sohbet bitti: talep oluştur ---
-  const elapsed = Date.now() - startedAt;
-  if (elapsed < MIN_CONVERSATION_MS) {
+  if (Date.now() - startedAt < MIN_CONVERSATION_MS) {
     // İnsan hızında değil: kaydetme, ama kullanıcıya normal görün.
-    return reply({ reply: turn.text, done: true });
+    return { reply: turn.text, done: true };
   }
-
   const leadRate = await checkLeadRate(ip);
-  if (!leadRate.ok) return reply({ reply: turn.text, done: true });
+  if (!leadRate.ok) return { reply: turn.text, done: true };
 
-  const transcript = [...messages, { role: "assistant" as const, content: turn.text }];
+  const transcript: ChatMessage[] = [...messages, { role: "assistant", content: turn.text }];
   const profile = turn.profile;
   const completeness = computeCompleteness(profile);
   const analysis = await analyzeLead(profile, transcript, completeness);
@@ -145,5 +175,5 @@ async function handle(req: NextRequest) {
     transcript,
   });
 
-  return reply({ reply: turn.text, done: true, leadId: newLeadId });
+  return { reply: turn.text, done: true, leadId: newLeadId };
 }

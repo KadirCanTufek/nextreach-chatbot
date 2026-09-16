@@ -79,6 +79,10 @@ Bu kuralları araç açıklamasına yazmak yetmedi: testte model platform sorusu
 
 **Çip protokolü:** Model, yapısal bir soru sorduğunda mesajın sonuna `[[chips: a | b | c]]` ekler. Sunucu bu satırı ayıklar, istemci çip olarak gösterir; tıklanan çip normal bir kullanıcı mesajı olarak gider. Ayrı bir API çağrısı ya da yapılandırılmış çıktı gerekmez, tek turda gelir.
 
+**Akış (streaming):** Cevaplar kelime kelime gelir. Sunucu satır satır JSON olaylar yayınlar (`delta`, `reset`, `end`); istemci metni anında yazar, çip işaretini ekrana sızdırmamak için son köşeli parantezden sonrasını bekletir. Talep kaydedilirken analiz ve veritabanı yazımı kapanış cümlesinden sonra çalışır; ziyaretçi metni hemen görür, "iletildi" etiketi birkaç saniye sonra gelir. "Yeter" kuralı bir araç denemesini reddederse `reset` olayı ekrana yazılanı siler ve model yeniden yazar.
+
+**Tarayıcı hafızası:** Sohbet `sessionStorage`'da tutulur; sayfa yenilense de kaldığı yerden ve aynı oturum kimliğiyle devam eder, panel açıksa açık kalır. Sekme kapanınca silinir.
+
 ### 2. Ton ve kişilik
 
 Sıcak, profesyonel, "siz". Kısa cümleler, emoji yok, pazarlama dili yok. Meraklı bir danışman gibi: söyleneni yansıtır, tek soru sorar. Adı var (Reach) çünkü isimsiz asistan formdan farksız hissettirir. "Sadece fiyat sorabilir miyim?" şikayetine doğrudan cevap: fiyat sorulabilir; asistan "mağaza büyüklüğüne göre kademeli, ekip 1 iş günü içinde net teklif verir" der, rakam uydurmaz.
@@ -106,7 +110,7 @@ Model **sayı uydurmaz, bileşen seçer**; toplamı kod toplar. Değerlendirme i
 ### 4. Admin view'de ne var?
 
 - **Üç sekme:** Nitelikli · İletişimsiz · Spam. Ekip gün içinde yalnızca ilkine bakar; diğerleri kaybolmaz ama önüne çıkmaz. Sekme sayaçları canlı.
-- **Filtreler:** Bugün / Bu hafta / Tümü, puan bandı, durum.
+- **Filtreler:** Bugün / Bu hafta / Tümü, puan bandı, durum. **Arama kutusu** isim, şirket, e-posta, telefon ve ihtiyaç özetinde anında arar (istemcide; liste zaten yüklü).
 - **Puan rozeti, rengi aciliyeti gösterir:** rozette 7/10 gibi puan; yeşil acil değil, sarı normal, kırmızı acil (acil olanlar hafifçe nabız atar). Üstte renk rehberi var. Tek rozetle iki bilgi.
 - **Satıra tıkla → sağdan panel** (Notion tarzı): iletişim bilgileri tıklanabilir (mailto / tel), puan bileşenleri çubuklarla, gerekçe, satış için özet, ihtiyaç profili, doluluk, tam sohbet.
 - **Durum takibi:** Bekliyor → İşlemde → Olumlu / Olumsuz. "Bekliyor" kimse dokunmadı demek; "İşlemde" ekip iletişime geçti; sonuç iki uçlu, böylece ekip kaç talebin müşteriye döndüğünü görür. Değişiklikte kısa bir bildirim.
@@ -133,17 +137,12 @@ Katmanlı:
 
 ---
 
-## 6 saatte yapamadıklarım, daha fazla zamanda ne eklerdim
+## 6 saatte neyi yapamadım, daha fazla zamanda ne eklerdim
 
-- **Streaming cevap.** Asistan cevabı tek parça geliyor; "yazıyor" animasyonu var ama token akışı yok. Soğuk başlangıçta ilk cevap uzun sürebiliyor; ilk ekleyeceğim şey bu.
-- **Oturum kalıcılığı.** Sayfa yenilenirse sohbet gider. `sessionStorage` ile 10 dakikalık iş.
-- **Sayfaya özel karşılama.** Fiyatlandırma bölümünden gelen ziyaretçiye farklı baloncuk; araştırmaya göre %25-35 daha iyi etkileşim.
-- **Cloudflare Turnstile.** Rate limit, zamanlama ve tur kuralları yeterli başlangıç; hedefli bot trafiği için görünmez captcha.
-- **E-posta bildirimi.** Kapsam dışıydı; Resend ile "8+ puanlı yeni talep" maili 20 dakika.
-- **Admin'de arama ve sayfalama.** 500 kayıt limiti var, arama yok.
-- **Eval seti.** `scripts/test-chat.mts` üç senaryo (normal, iletişim reddi + devam modu, konu dışı); 20-30 senaryoyla "yeter" kararının ve puanlamanın tutarlılığını sayıyla ölçmek isterim.
-- **Geç gelen iletişimde tam yeniden puanlama.** Ziyaretçi e-postasını talep kaydedildikten sonra bırakırsa yalnızca iletişim bileşeni 1'e çıkar; diğer bileşenler ve gerekçe yeniden hesaplanmaz.
-- **Prompt cache.** Sistem promptu her turda küçük değişiyor (tur sayacı). Sayacı kullanıcı mesajına taşıyıp sistem promptunu sabitlemek cache'i açar.
+PRD kapsamındaki isterlerin hepsi teslimde: landing page'de tetiklenen chatbot, saklanan talepler, ekibin listeleyebildiği iç görünüm, deploy ve bu README. Kapsam dışı bırakılanlar (auth, e-posta/SMS, mobil app, çok dilli) PRD'nin kendi kararı. Yapamadığım bir ister yok.
+
+**Nice to have** (daha fazla zamanla eklerdim):
+- **Sayfaya özel karşılama.** Şu an tek bir landing page var; iç sayfalar olsaydı fiyatlandırma sayfasından gelen ziyaretçiye farklı bir baloncuk metni eklenebilirdi. Araştırmaya göre sayfaya özel karşılama %25-35 daha iyi etkileşim veriyor.
 
 ---
 
@@ -155,10 +154,10 @@ src/
     page.tsx                  Landing page; "Bize Ulaşın" butonları widget'ı açar
     admin/page.tsx            İç görünüm (sekmeler, filtreler, sağ panel, durum)
     admin/login/page.tsx      Erişim anahtarı girişi
-    api/chat/route.ts         Sohbet turu: rate limit, LLM, talep kaydı, devam modu
+    api/chat/route.ts         Sohbet turu (NDJSON akışı): rate limit, LLM, talep kaydı, devam modu
     api/admin/*               Liste, durum güncelleme, giriş/çıkış
   components/
-    ChatWidget.tsx            Başlatıcı, baloncuk, panel, çipler
+    ChatWidget.tsx            Başlatıcı, baloncuk, panel, çipler, akış okuyucu, sessionStorage
     motion/*                  beUI bileşenleri (registry'den kopyalanmış)
   lib/
     chat-config.ts            Karşılama metni, çipler, baloncuk zamanlaması

@@ -9,6 +9,52 @@ import type { ChatMessage, ChatResponse, EndReason } from "@/lib/types";
 
 const SPRING = { type: "spring", stiffness: 380, damping: 32, mass: 0.8 } as const;
 
+/** Sohbet tarayıcı sekmesi kapanana kadar saklanır; sayfa yenilense de kaldığı yerden devam eder. */
+const STORAGE_KEY = "nr_chat_v1";
+
+interface ChatState {
+  sessionId: string;
+  startedAt: number;
+  messages: ChatMessage[];
+  chips: string[];
+  done: boolean;
+  leadId: string | null;
+  contactAdded: boolean;
+  ended: EndReason | null;
+  open: boolean;
+}
+
+function freshState(): ChatState {
+  return {
+    sessionId: crypto.randomUUID(),
+    startedAt: Date.now(),
+    messages: [{ role: "assistant", content: GREETING }],
+    chips: GREETING_CHIPS,
+    done: false,
+    leadId: null,
+    contactAdded: false,
+    ended: null,
+    open: false,
+  };
+}
+
+function loadState(): ChatState {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const saved = JSON.parse(raw) as Partial<ChatState>;
+      if (saved.sessionId && Array.isArray(saved.messages) && saved.messages.length > 0) {
+        return { ...freshState(), ...saved } as ChatState;
+      }
+    }
+  } catch {
+    /* özel mod, dolu depolama vb. */
+  }
+  return freshState();
+}
+
+type StreamEvent = { t: "delta"; text: string } | { t: "reset" } | ({ t: "end" } & ChatResponse) | { t: "error"; message: string };
+
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -16,10 +62,32 @@ interface Props {
 
 /**
  * Sağ altta kalıcı başlatıcı + proaktif baloncuk + sohbet paneli.
- * Form yok: isim, şirket ve iletişim bilgisi sohbette toplanır.
+ * Form yok: isim, şirket ve iletişim bilgisi sohbette toplanır. Cevaplar akışla gelir.
+ * Bu bileşen yalnızca istemcide render edilir (sessionStorage'dan ilk durum okunur).
  */
 export default function ChatWidget({ open, onOpenChange }: Props) {
   const reduce = useReducedMotion();
+
+  const [state, setState] = useState<ChatState>(loadState);
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const [streamed, setStreamed] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Sayfa yenilendiğinde panel açıksa açık kalsın.
+  const restoredOpen = useRef(state.open);
+  useEffect(() => {
+    if (restoredOpen.current) onOpenChange(true);
+  }, [onOpenChange]);
+
+  // Her değişiklikte sakla.
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, open }));
+    } catch {
+      /* depolama yoksa sessizce geç */
+    }
+  }, [state, open]);
 
   // --- Baloncuk (teaser): sayfa yüklendikten sonra bir kez ---
   const [teaser, setTeaser] = useState(false);
@@ -43,27 +111,13 @@ export default function ChatWidget({ open, onOpenChange }: Props) {
     return () => clearTimeout(t);
   }, [open]);
 
-  // Mobilde baloncuk birkaç saniye sonra kendini gizler; ekran kalabalık kalmasın.
+  // Mobilde baloncuk birkaç saniye sonra kendini gizler.
   useEffect(() => {
     if (!teaser) return;
-    const isMobile = window.matchMedia("(max-width: 640px)").matches;
-    if (!isMobile) return;
+    if (!window.matchMedia("(max-width: 640px)").matches) return;
     const t = setTimeout(() => setTeaser(false), 8000);
     return () => clearTimeout(t);
   }, [teaser]);
-
-  // --- Sohbet durumu ---
-  // Oturum kimliği ve başlangıç zamanı render'ı etkilemez; ref yeter.
-  const sessionRef = useRef<{ id: string; startedAt: number } | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([{ role: "assistant", content: GREETING }]);
-  const [chips, setChips] = useState<string[]>(GREETING_CHIPS);
-  const [input, setInput] = useState("");
-  const [sending, setSending] = useState(false);
-  const [done, setDone] = useState(false);
-  const [leadId, setLeadId] = useState<string | null>(null);
-  const [contactAdded, setContactAdded] = useState(false);
-  const [ended, setEnded] = useState<EndReason | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -73,17 +127,10 @@ export default function ChatWidget({ open, onOpenChange }: Props) {
     onOpenChange(true);
   }, [onOpenChange]);
 
-  // Panel ilk açıldığında oturum başlar (bot zamanlama kontrolü için).
-  useEffect(() => {
-    if (open && !sessionRef.current) {
-      sessionRef.current = { id: crypto.randomUUID(), startedAt: Date.now() };
-    }
-  }, [open]);
-
   useEffect(() => {
     if (!open) return;
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: reduce ? "auto" : "smooth" });
-  }, [messages, sending, chips, open, reduce]);
+  }, [state.messages, state.chips, sending, open, reduce]);
 
   useEffect(() => {
     if (open) {
@@ -102,37 +149,97 @@ export default function ChatWidget({ open, onOpenChange }: Props) {
   const send = useCallback(
     async (raw: string) => {
       const text = raw.trim();
-      if (!text || sending || ended) return;
+      if (!text || sending || state.ended) return;
       setError(null);
-      setChips([]);
-      const next: ChatMessage[] = [...messages, { role: "user", content: text }];
-      setMessages(next);
+
+      const before = state;
+      const base: ChatMessage[] = [...state.messages, { role: "user", content: text }];
+      const bubbleIndex = base.length;
+      setState((s) => ({ ...s, messages: base, chips: [] }));
       setInput("");
       setSending(true);
+      setStreamed(false);
+
+      const setBubble = (content: string | null) =>
+        setState((s) => {
+          const head = s.messages.slice(0, bubbleIndex);
+          return { ...s, messages: content === null ? head : [...head, { role: "assistant", content }] };
+        });
+      const applyFinal = (data: ChatResponse) =>
+        setState((s) => ({
+          ...s,
+          messages: [...base, { role: "assistant", content: data.reply }],
+          chips: data.chips ?? [],
+          done: data.ended ? s.done : s.done || data.done,
+          leadId: data.leadId ?? s.leadId,
+          contactAdded: s.contactAdded || Boolean(data.contactAdded),
+          ended: data.ended ?? s.ended,
+        }));
+
       try {
-        const session = (sessionRef.current ??= { id: crypto.randomUUID(), startedAt: Date.now() });
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId: session.id, startedAt: session.startedAt, messages: next, ...(leadId ? { leadId } : {}) }),
+          body: JSON.stringify({
+            sessionId: state.sessionId,
+            startedAt: state.startedAt,
+            messages: base,
+            ...(state.leadId ? { leadId: state.leadId } : {}),
+          }),
         });
-        const data = (await res.json()) as ChatResponse & { error?: string };
-        if (!res.ok && !data.reply) throw new Error(data.error ?? "Bir sorun oluştu.");
-        setMessages((m) => [...m, { role: "assistant", content: data.reply }]);
-        setChips(data.chips ?? []);
-        if (data.ended) setEnded(data.ended);
-        else if (data.done) setDone(true);
-        if (data.leadId) setLeadId(data.leadId);
-        if (data.contactAdded) setContactAdded(true);
+
+        const contentType = res.headers.get("content-type") ?? "";
+        if (!contentType.includes("ndjson")) {
+          // Ön kontroller (rate limit, geçersiz istek) düz JSON döner.
+          const data = (await res.json()) as ChatResponse & { error?: string };
+          if (!res.ok && !data.reply) throw new Error(data.error ?? "Bir sorun oluştu.");
+          applyFinal(data);
+          return;
+        }
+        if (!res.body) throw new Error("Bağlantı hatası. Tekrar deneyin.");
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let acc = "";
+        let finished = false;
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let nl: number;
+          while ((nl = buffer.indexOf("\n")) !== -1) {
+            const line = buffer.slice(0, nl).trim();
+            buffer = buffer.slice(nl + 1);
+            if (!line) continue;
+            const ev = JSON.parse(line) as StreamEvent;
+            if (ev.t === "delta") {
+              acc += ev.text;
+              setStreamed(true);
+              setBubble(acc);
+            } else if (ev.t === "reset") {
+              acc = "";
+              setStreamed(false);
+              setBubble(null);
+            } else if (ev.t === "end") {
+              finished = true;
+              applyFinal(ev);
+            } else if (ev.t === "error") {
+              throw new Error(ev.message);
+            }
+          }
+        }
+        if (!finished) throw new Error("Cevap tamamlanamadı. Tekrar deneyin.");
       } catch (err) {
         setError(err instanceof Error ? err.message : "Bağlantı hatası. Tekrar deneyin.");
-        setMessages(messages); // gönderilemeyen mesajı geri al
+        setState((s) => ({ ...s, messages: before.messages, chips: before.chips })); // gönderilemeyen mesajı geri al
         setInput(text);
       } finally {
         setSending(false);
+        setStreamed(false);
       }
     },
-    [messages, sending, leadId, ended],
+    [state, sending],
   );
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -143,16 +250,11 @@ export default function ChatWidget({ open, onOpenChange }: Props) {
   }
 
   function resetChat() {
-    setMessages([{ role: "assistant", content: GREETING }]);
-    setChips(GREETING_CHIPS);
-    setDone(false);
-    setLeadId(null);
-    setContactAdded(false);
-    setEnded(null);
     setError(null);
-    sessionRef.current = { id: crypto.randomUUID(), startedAt: Date.now() };
+    setState({ ...freshState(), open: true });
   }
 
+  const { messages, chips, done, contactAdded, ended } = state;
   const dur = reduce ? 0 : undefined;
 
   return (
@@ -253,7 +355,7 @@ export default function ChatWidget({ open, onOpenChange }: Props) {
                 </motion.div>
               ))}
 
-              {sending && (
+              {sending && !streamed && (
                 <motion.div
                   initial={reduce ? false : { opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -333,7 +435,7 @@ export default function ChatWidget({ open, onOpenChange }: Props) {
                   placeholder={ended ? "Yeni sohbet başlatabilirsiniz" : done ? "Sorunuz varsa yazın…" : "Mesajınızı yazın…"}
                   disabled={ended !== null}
                   maxLength={1000}
-                  className="flex-1 resize-none rounded-xl border border-slate-200 px-3.5 py-2.5 text-[15px] focus:outline-none focus:ring-2 focus:ring-indigo-500 max-h-32"
+                  className="flex-1 resize-none rounded-xl border border-slate-200 px-3.5 py-2.5 text-[15px] focus:outline-none focus:ring-2 focus:ring-indigo-500 max-h-32 disabled:bg-slate-50"
                 />
                 <motion.button
                   onClick={() => void send(input)}

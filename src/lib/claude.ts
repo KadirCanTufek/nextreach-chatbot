@@ -316,6 +316,55 @@ function textOf(response: Anthropic.Message): string {
     .trim();
 }
 
+/** Akış (streaming) kancaları: metin parçaları ve "baştan al" sinyali. */
+export interface TurnHooks {
+  onDelta?: (text: string) => void;
+  onReset?: () => void;
+}
+
+/**
+ * Akış sırasında çip işaretinin ("[[chips: ...]]") ekrana sızmasını engeller:
+ * son "[" karakterinden sonrasını bekletir, tam metin gelince kalan farkı gönderir.
+ */
+class StreamGate {
+  private pending = "";
+  private emitted = "";
+  constructor(private readonly sink: (text: string) => void) {}
+  push(delta: string) {
+    this.pending += delta;
+    const cut = this.pending.lastIndexOf("[");
+    const safe = cut === -1 ? this.pending : this.pending.slice(0, cut);
+    if (safe) {
+      this.sink(safe);
+      this.emitted += safe;
+      this.pending = this.pending.slice(safe.length);
+    }
+  }
+  finish(fullClean: string) {
+    const head = this.emitted.trimEnd();
+    if (fullClean.startsWith(head)) {
+      const rest = fullClean.slice(head.length);
+      if (rest.trim()) this.sink(rest);
+    }
+    // Aksi halde istemci "end" olayındaki tam metinle bubble'ı değiştirir.
+    this.emitted = fullClean;
+    this.pending = "";
+  }
+}
+
+type CreateParams = Anthropic.MessageCreateParamsNonStreaming;
+
+/** Kanca varsa akışla üretir ve parçaları iletir; yoksa tek seferde döner. */
+async function createMessage(params: CreateParams, hooks?: TurnHooks): Promise<Anthropic.Message> {
+  if (!hooks?.onDelta) return client().messages.create(params);
+  const gate = new StreamGate(hooks.onDelta);
+  const stream = client().messages.stream(params);
+  stream.on("text", (delta) => gate.push(delta));
+  const message = await stream.finalMessage();
+  gate.finish(splitChips(textOf(message)).text);
+  return message;
+}
+
 export type ChatTurnResult =
   | { type: "reply"; text: string; chips: string[] }
   | { type: "finalized"; text: string; profile: FinalizeInputT }
@@ -337,20 +386,24 @@ function endedResult(rawText: string, toolUse: Anthropic.ToolUseBlock): ChatTurn
  * Tek bir sohbet turu. Model ya cevap verir ya da finalize_conversation çağırır.
  * Araç girdisi şemadan geçmezse hata olarak geri verilir ve model eksikleri sormaya devam eder.
  */
-export async function runChatTurn(history: ChatMessage[]): Promise<ChatTurnResult> {
+export async function runChatTurn(history: ChatMessage[], hooks?: TurnHooks): Promise<ChatTurnResult> {
   const assistantTurns = history.filter((m) => m.role === "assistant").length;
   const system = buildSystemPrompt(assistantTurns, salesEmail());
   const messages = toApiMessages(history);
 
   for (let i = 0; i < 3; i++) {
-    const response = await client().messages.create({
-      model: MODEL,
-      max_tokens: 1024,
-      system,
-      messages,
-      tools: [FINALIZE_TOOL, END_TOOL],
-      output_config: { effort: "low" },
-    });
+    if (i > 0) hooks?.onReset?.(); // reddedilen deneme ekrana yazılmış olabilir; baştan al
+    const response = await createMessage(
+      {
+        model: MODEL,
+        max_tokens: 1024,
+        system,
+        messages,
+        tools: [FINALIZE_TOOL, END_TOOL],
+        output_config: { effort: "low" },
+      },
+      hooks,
+    );
 
     if (response.stop_reason === "refusal") {
       return { type: "reply", text: "Bu konuda yardımcı olamıyorum. NextReach ile ilgili ihtiyacınıza dönebilir miyiz?", chips: [] };
@@ -405,16 +458,19 @@ export async function runChatTurn(history: ChatMessage[]): Promise<ChatTurnResul
         },
       ],
     });
-    const closing = await client().messages.create({
-      model: MODEL,
-      max_tokens: 300,
-      system,
-      messages,
-      tools: [FINALIZE_TOOL, END_TOOL],
-      output_config: { effort: "low" },
-    });
-
     const pre = splitChips(rawText).text;
+    if (pre) hooks?.onDelta?.("\n\n");
+    const closing = await createMessage(
+      {
+        model: MODEL,
+        max_tokens: 300,
+        system,
+        messages,
+        tools: [FINALIZE_TOOL, END_TOOL],
+        output_config: { effort: "low" },
+      },
+      hooks,
+    );
     const post = splitChips(textOf(closing)).text;
     const combined = [pre, post].filter(Boolean).join("\n\n");
     return {
@@ -483,20 +539,24 @@ export type FollowUpResult =
   | { type: "contact"; text: string; contact: AddContactInputT }
   | { type: "ended"; text: string; reason: EndReason };
 
-export async function runFollowUpTurn(history: ChatMessage[], hasContact: boolean): Promise<FollowUpResult> {
+export async function runFollowUpTurn(history: ChatMessage[], hasContact: boolean, hooks?: TurnHooks): Promise<FollowUpResult> {
   const system = buildFollowUpPrompt(hasContact, salesEmail());
   const messages = toApiMessages(history);
   const tools = hasContact ? [END_TOOL] : [ADD_CONTACT_TOOL, END_TOOL];
 
   for (let i = 0; i < 2; i++) {
-    const response = await client().messages.create({
-      model: MODEL,
-      max_tokens: 600,
-      system,
-      messages,
-      tools,
-      output_config: { effort: "low" },
-    });
+    if (i > 0) hooks?.onReset?.();
+    const response = await createMessage(
+      {
+        model: MODEL,
+        max_tokens: 600,
+        system,
+        messages,
+        tools,
+        output_config: { effort: "low" },
+      },
+      hooks,
+    );
 
     if (response.stop_reason === "refusal") {
       return { type: "reply", text: "Bu konuda yardımcı olamıyorum. NextReach ile ilgili başka bir sorunuz var mı?", chips: [] };
@@ -526,15 +586,20 @@ export async function runFollowUpTurn(history: ChatMessage[], hasContact: boolea
       role: "user",
       content: [{ type: "tool_result", tool_use_id: toolUse.id, content: "İletişim bilgisi talebe eklendi. Tek cümle teşekkür et; ekibin 1 iş günü içinde döneceğini söyle. Çip verme." }],
     });
-    const closing = await client().messages.create({
-      model: MODEL,
-      max_tokens: 200,
-      system,
-      messages,
-      tools,
-      output_config: { effort: "low" },
-    });
-    const combined = [splitChips(rawText).text, splitChips(textOf(closing)).text].filter(Boolean).join("\n\n");
+    const preText = splitChips(rawText).text;
+    if (preText) hooks?.onDelta?.("\n\n");
+    const closing = await createMessage(
+      {
+        model: MODEL,
+        max_tokens: 200,
+        system,
+        messages,
+        tools,
+        output_config: { effort: "low" },
+      },
+      hooks,
+    );
+    const combined = [preText, splitChips(textOf(closing)).text].filter(Boolean).join("\n\n");
     return { type: "contact", text: combined || "Teşekkürler, iletişim bilginizi talebinize ekledim. Ekibimiz 1 iş günü içinde dönecek.", contact: parsed.data };
   }
 

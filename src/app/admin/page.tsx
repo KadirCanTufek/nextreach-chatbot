@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { Building2, Check, Clock, Flame, Inbox, Mail, Phone, RefreshCw, X } from "lucide-react";
+import { Building2, Check, Clock, Flame, Inbox, Mail, Phone, RefreshCw, Search, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -53,13 +53,24 @@ export default function AdminPage() {
   const [band, setBand] = useState<ScoreBand | "all">("all");
   const [status, setStatus] = useState<LeadStatus | "all">("all");
   const [refreshKey, setRefreshKey] = useState(0);
+  const [query, setQuery] = useState("");
   const [data, setData] = useState<{ key: string; leads: Lead[]; counts: Record<LeadKind, number> } | null>(null);
   const [selected, setSelected] = useState<Lead | null>(null);
 
   const filterKey = `${kind}|${range}|${band}|${status}|${refreshKey}`;
   const loading = !data || data.key !== filterKey;
-  const leads = data?.leads ?? [];
+  const allLeads = data?.leads ?? [];
   const counts = data?.counts ?? EMPTY_COUNTS;
+
+  // Arama istemcide: liste zaten yüklü (en fazla 500 kayıt), anında filtrelenir.
+  const q = query.trim().toLocaleLowerCase("tr-TR");
+  const leads = q
+    ? allLeads.filter((l) =>
+        [l.name, l.company, l.email, l.phone, l.need_summary]
+          .filter(Boolean)
+          .some((v) => String(v).toLocaleLowerCase("tr-TR").includes(q)),
+      )
+    : allLeads;
 
   useEffect(() => {
     let cancelled = false;
@@ -176,6 +187,21 @@ export default function AdminPage() {
               </TabsList>
             </Tabs>
           </div>
+          <label className="relative block w-full sm:w-72">
+            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="İsim, şirket, e-posta, ihtiyaç…"
+              aria-label="Taleplerde ara"
+              className="w-full rounded-full border border-slate-200 bg-white pl-9 pr-9 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+            {query && (
+              <button onClick={() => setQuery("")} className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 grid place-items-center rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100" aria-label="Aramayı temizle">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </label>
           <div className="flex items-center gap-3 text-xs text-slate-600">
             <span className="text-slate-500">Rozet rengi = aciliyet:</span>
             {(Object.keys(URGENCY_LABEL) as LeadUrgency[]).map((u) => (
@@ -219,7 +245,7 @@ export default function AdminPage() {
                       className="flex flex-col items-center gap-2 text-slate-400"
                     >
                       <Inbox className="h-6 w-6" />
-                      <span>Bu filtrede talep yok.</span>
+                      <span>{q ? `"${query.trim()}" için sonuç yok.` : "Bu filtrede talep yok."}</span>
                     </motion.div>
                   </td>
                 </tr>
