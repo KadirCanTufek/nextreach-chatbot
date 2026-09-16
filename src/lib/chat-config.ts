@@ -12,3 +12,6 @@ export const GREETING_CHIPS = ["Kârlılığı göremiyorum", "Fiyat sormak isti
 export const TEASER_TEXT = `Merhaba, ben ${ASSISTANT_NAME}. Analitik tarafında size nasıl yardımcı olabilirim?`;
 export const TEASER_DELAY_MS = 6000;
 export const TEASER_SESSION_KEY = "nr_teaser_shown";
+
+/** Kapanışta paylaşılan satış adresi. YER TUTUCU: gerçek adresi SALES_EMAIL env değişkeniyle verin. */
+export const DEFAULT_SALES_EMAIL = "satis@nextreach.com";

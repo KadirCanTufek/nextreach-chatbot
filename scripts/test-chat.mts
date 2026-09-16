@@ -1,7 +1,12 @@
 // DB olmadan yalnızca Claude katmanını dener: `npm run test:chat`
 // Ziyaretçi, asistanın sorusuna anahtar kelimeyle tepki veren basit bir kural motoru.
-import { GREETING, analyzeLead, computeCompleteness, runChatTurn } from "../src/lib/claude";
+import { GREETING, analyzeLead, computeCompleteness, runChatTurn, runFollowUpTurn } from "../src/lib/claude";
 import type { ChatMessage } from "../src/lib/types";
+
+// Senaryo: `npm run test:chat -- --scenario=decline` → iletişim bilgisi vermeyen ziyaretçi + devam modu
+const scenario = process.argv.find((a) => a.startsWith("--scenario="))?.split("=")[1] ?? "default";
+const declineContact = scenario === "decline";
+let contactRefusals = 0;
 
 const persona = {
   name: "Ayşe Yılmaz",
@@ -16,7 +21,13 @@ function answer(question: string, chips: string[], turn: number): string {
   if (chipHas("500-2.000")) return chipHas("500-2.000")!;
   if (chipHas("sahibi")) return chipHas("sahibi")!;
   if (chipHas("bu ay") || chipHas("1-3 ay")) return "Kasım indirimlerinden önce oturmuş olsun istiyoruz, ekim sonu gibi.";
-  if (chipHas("e-posta bırak")) return chipHas("e-posta bırak")!;
+  if (chipHas("e-posta bırak")) {
+    if (declineContact) {
+      contactRefusals++;
+      return chipHas("istemiyorum") ?? chipHas("hayır") ?? "Şimdilik paylaşmak istemiyorum";
+    }
+    return chipHas("e-posta bırak")!;
+  }
   if (chipHas("doğru")) return chipHas("doğru")!;
 
   // 2) Çip yoksa sorunun son cümlesine bak
@@ -24,7 +35,13 @@ function answer(question: string, chips: string[], turn: number): string {
   const last = (sentences[sentences.length - 1] ?? question).toLowerCase();
   const has = (...keys: string[]) => keys.some((k) => last.includes(k));
   if (has("hitap", "isminiz", "soyisminiz", "adınız", "nasıl seslen")) return persona.name;
-  if (has("e-posta", "telefon", "numara", "ulaşabil", "iletişim bilgi", "iletişime geç", "adresinizi")) return persona.email;
+  if (has("e-posta", "telefon", "numara", "ulaşabil", "iletişim bilgi", "iletişime geç", "adresinizi")) {
+    if (declineContact) {
+      contactRefusals++;
+      return contactRefusals === 1 ? "Şimdilik paylaşmak istemiyorum." : "Hayır, teşekkürler.";
+    }
+    return persona.email;
+  }
   if (has("marka", "şirket", "firma", "mağazanızın adı", "hangi mağaza")) return persona.company;
   if (has("platform", "altyapı", "shopify", "ikas", "ticimax")) return "ikas";
   if (has("sipariş", "büyüklü", "hacim", "ölçek")) return "Aylık 1500 sipariş civarı";
@@ -66,6 +83,24 @@ if (!finalized) {
 
 console.log("=== Profil ===");
 console.log(JSON.stringify(finalized, null, 2));
+console.log(`iletişim ret sayısı: ${contactRefusals}`);
+
+if (declineContact) {
+  // Devam modu: fiyat sorusu → hatırlatma bekleniyor; sonra e-posta → add_contact bekleniyor
+  console.log("\n=== Devam modu ===");
+  const hasContact = Boolean(finalized.email || finalized.phone);
+  for (const line of ["Fiyat ne kadar peki?", "Tamam, o zaman ayse@modaevi.com'a yazın."]) {
+    messages.push({ role: "user", content: line });
+    console.log(`Ziyaretçi: ${line}`);
+    const t0 = Date.now();
+    const r = await runFollowUpTurn(messages, hasContact);
+    const chipsNote = r.type === "reply" && r.chips.length ? `  [çipler: ${r.chips.join(" | ")}]` : "";
+    console.log(`Reach (${Date.now() - t0} ms): ${r.text}${chipsNote}`);
+    if (r.type === "contact") console.log("add_contact →", JSON.stringify(r.contact));
+    console.log();
+    messages.push({ role: "assistant", content: r.text });
+  }
+}
 const completeness = computeCompleteness(finalized);
 const t1 = Date.now();
 const analysis = await analyzeLead(finalized, messages, completeness);

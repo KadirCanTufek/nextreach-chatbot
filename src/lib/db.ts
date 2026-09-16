@@ -93,6 +93,34 @@ export async function updateLeadStatus(id: string, status: LeadStatus): Promise<
   return rows.length > 0;
 }
 
+// --- Devam modu: talep iletildikten sonra ---
+
+export async function getLeadForSession(id: string, sessionId: string): Promise<{ id: string; hasContact: boolean } | null> {
+  const sql = getSql();
+  const rows = await sql`SELECT id, (email IS NOT NULL OR phone IS NOT NULL) AS has_contact FROM leads WHERE id = ${id}::uuid AND session_id = ${sessionId}`;
+  if (rows.length === 0) return null;
+  return { id: rows[0].id as string, hasContact: Boolean(rows[0].has_contact) };
+}
+
+/** Sonradan bırakılan iletişim bilgisini talebe ekler; İletişimsiz talep Nitelikli olur. */
+export async function addLeadContact(id: string, sessionId: string, email: string | null, phone: string | null): Promise<boolean> {
+  const sql = getSql();
+  const rows = await sql`
+    UPDATE leads SET
+      email = COALESCE(${email}, email),
+      phone = COALESCE(${phone}, phone),
+      contact_inferred = false,
+      kind = CASE WHEN kind = 'no_contact' THEN 'qualified' ELSE kind END
+    WHERE id = ${id}::uuid AND session_id = ${sessionId}
+    RETURNING id`;
+  return rows.length > 0;
+}
+
+export async function updateLeadTranscript(id: string, sessionId: string, transcript: ChatMessage[]): Promise<void> {
+  const sql = getSql();
+  await sql`UPDATE leads SET transcript = ${JSON.stringify(transcript)}::jsonb WHERE id = ${id}::uuid AND session_id = ${sessionId}`;
+}
+
 // --- Rate limit ---
 
 export async function recordRateEvent(ip: string, kind: "message" | "lead"): Promise<void> {

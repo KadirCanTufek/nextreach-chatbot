@@ -25,12 +25,13 @@ npm run dev                    # http://localhost:3000
 | `ANTHROPIC_API_KEY` | Claude API anahtarı |
 | `DATABASE_URL` | Neon Postgres bağlantı dizesi (pooled) |
 | `ADMIN_KEY` | `/admin` girişi için tek erişim anahtarı (uzun ve rastgele seçin) |
+| `SALES_EMAIL` | İsteğe bağlı. Kapanışta paylaşılan satış e-postası; boşsa yer tutucu `satis@nextreach.com` |
 
 Yararlı komutlar:
 
 | Komut | Ne yapar |
 |---|---|
-| `npm run test:chat` | Veritabanı olmadan yalnızca sohbet motorunu dener: senaryolu bir ziyaretçi ile uçtan uca konuşma, profil ve analiz çıktısı |
+| `npm run test:chat` | Veritabanı olmadan yalnızca sohbet motorunu dener: senaryolu bir ziyaretçi ile uçtan uca konuşma, profil ve analiz çıktısı. `-- --scenario=decline` ile iletişim vermeyen ziyaretçi + devam modu senaryosu |
 | `npm run typecheck` / `npm run lint` | Tip ve lint kontrolü |
 
 Deploy: Vercel'e bağlayın, aynı üç değişkeni Environment Variables'a girin. Şemayı bir kez `npm run db:setup` ile uygulayın. Fonksiyon bölgesi `vercel.json` ile Frankfurt'a (fra1) sabitlendi; Neon da aynı bölgede.
@@ -60,14 +61,14 @@ Deploy: Vercel'e bağlayın, aynı üç değişkeni Environment Variables'a giri
 1. İhtiyaç önce. İlk mesaja yansıtma + tek derinleştirme sorusu.
 2. İkinci-üçüncü mesajda isim sorusu: "Size hitap edebilmem için isim ve soyisminizi alabilir miyim?"
 3. Şirket bilgileri sohbetin içine yayılır: marka adı (serbest metin), platform, mağaza büyüklüğü, rol. Yapısal olanlar **çiplerle** sorulur (Shopify | ikas | Ticimax | T-Soft | Diğer gibi): mobilde yazmayı azaltır, veriyi standartlaştırır.
-4. Zorunlu üç başlık dolunca, özetten **hemen önce** iletişim istenir ve nedeni söylenir: "Ekibin 1 iş günü içinde dönmesi için e-posta ya da telefon, biri yeter." Bir kez istenir; vermezse ısrar yok.
+4. Zorunlu üç başlık dolunca, özetten **hemen önce** iletişim istenir ve nedeni söylenir: "Ekibin 1 iş günü içinde dönmesi için e-posta ya da telefon, biri yeter." Reddederse ikinci ve son kez, sonucunu ve sınırını söyleyerek istenir ("iletişim bilgisi olmadan ekibim size dönüş yapamıyor… yalnızca bu konuda kullanılır"). Yine reddederse ısrar yok.
 5. 2-3 satır özet + "eksik var mı?" → onay → kayıt.
 
 Asistanın sohbette anlamak *zorunda* olduğu üç şey: **hedef veya problem** (somut, "raporlama" değil), **mevcut durum** (platform, bugünkü raporlama yöntemi), **zamanlama** (ne zaman, tetikleyen ne).
 
 **"Yeter" kararı modele bırakılmış ama kodla sınırlandırılmış.** Model sohbeti yalnızca `finalize_conversation` aracını çağırarak bitirebilir. Bu aracın girdisi zod ile doğrulanır ve şu kurallar sağlanmadan araç hata döner, model sormaya devam eder:
 - Üç zorunlu başlık somut olmalı; "bilinmiyor" ancak ziyaretçi iki kez sorulmasına rağmen açıkça reddettiyse kabul edilir (`declined_fields`).
-- İletişim bilgisi en az bir kez, gerekçesiyle istenmiş olmalı (`contact_requested`); verilmiş olması şart değil.
+- İletişim bilgisi gerekçesiyle istenmiş olmalı (`contact_requested`); verilmediyse ikinci kez sonucu söylenerek istenmiş ve açık ret `declined_fields`'a yazılmış olmalı. Verilmiş olması şart değil.
 - Özet yazılmış ve ziyaretçi onaylamış olmalı (`visitor_confirmed`).
 - En az 4 ziyaretçi mesajı geçmiş olmalı; erken bitişte (`ended_early`) neden yazılmalı.
 
@@ -110,7 +111,9 @@ Katmanlı:
 ### 6. Ziyaretçi bir soruya cevap vermek istemezse?
 
 - İsteğe bağlı soruysa hemen geçilir. Zorunluysa asistan nedenini bir cümleyle söyler ve bir kez daha nazikçe ister; yine vermezse "belirtilmedi" kabul eder, `declined_fields`'a yazar ve devam eder. Akış hiçbir noktada kilitlenmez.
-- İletişim bilgisi vermek istemezse: ısrar yok. Talep **İletişimsiz** sekmesine düşer; satış arayamaz ama pazarlama "insanlar ne soruyor" diye okuyabilir. Analiz, sohbette geçen bir e-posta/telefon varsa yakalar.
+- İletişim bilgisi vermek istemezse: **iki aşama, sonra saygı.** İlk istek gerekçeli. Reddedilirse ikinci ve son istek sonucu açıkça söyler: iletişim bilgisi olmadan ekip dönüş yapamaz, talep kayda geçer ama cevapsız kalır; bilgi yalnızca bu konuda kullanılır. Yine reddederse suçlama yok, "kapatıldı" yok: asistan notların ekibe iletildiğini, bu haliyle ulaşılamayacağını tek cümleyle söyler, kapıyı açık bırakır (bu pencere ya da satış e-postası) ve ürün sorularına devam etmeyi teklif eder. Talep **İletişimsiz** sekmesine düşer; satış arayamaz ama pazarlama "insanlar ne soruyor" diye okuyabilir.
+- **Devam modu.** Talep iletildikten sonra yazı kutusu kapanmaz. Ziyaretçi soru sormaya devam edebilir; iletişim bilgisi bırakmadıysa fiyat/teklif/demo sorduğunda asistan cevabını verir ve tek cümleyle "net teklif için e-posta ya da telefon gerekir" diye hatırlatır. Sonradan e-posta veya telefon yazarsa `add_contact` aracıyla **aynı talebe eklenir**, talep İletişimsiz'den Nitelikli'ye geçer, sohbetin devamı da kayda işlenir. Yani "kapı açık" sözü gerçek.
+- Kapanışta paylaşılan satış adresi (`satis@nextreach.com`) bir **yer tutucu**; PRD'de gerçek adres yok. `SALES_EMAIL` ortam değişkeniyle değiştirilir.
 
 ---
 
@@ -142,7 +145,7 @@ src/
     motion/*                  beUI bileşenleri (registry'den kopyalanmış)
   lib/
     chat-config.ts            Karşılama metni, çipler, baloncuk zamanlaması
-    claude.ts                 Sistem promptu, finalize aracı ve "yeter" kuralları, çip protokolü, analiz
+    claude.ts                 Sistem promptu, finalize aracı ve "yeter" kuralları, çip protokolü, devam modu (add_contact), analiz
     db.ts                     Neon sorguları
     rate-limit.ts             IP limitleri
     admin-auth.ts             Anahtar/cookie doğrulaması

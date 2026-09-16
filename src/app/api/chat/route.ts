@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { analyzeLead, computeCompleteness, runChatTurn, toNeedProfile } from "@/lib/claude";
-import { insertLead } from "@/lib/db";
+import { analyzeLead, computeCompleteness, runChatTurn, runFollowUpTurn, toNeedProfile } from "@/lib/claude";
+import { addLeadContact, getLeadForSession, insertLead, updateLeadTranscript } from "@/lib/db";
 import { LIMITS, checkLeadRate, checkMessageRate, getClientIp } from "@/lib/rate-limit";
 import type { ChatResponse, LeadKind } from "@/lib/types";
 
@@ -15,6 +15,7 @@ const Body = z.object({
   sessionId: z.string().min(8).max(64),
   startedAt: z.number().int().positive(),
   website: z.string().optional(), // honeypot
+  leadId: z.string().uuid().optional(), // devam modu
   messages: z
     .array(
       z.object({
@@ -52,7 +53,7 @@ async function handle(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Geçersiz istek.", issues: parsed.error.issues }, { status: 400 });
   }
-  const { sessionId, startedAt, website, messages } = parsed.data;
+  const { sessionId, startedAt, website, leadId, messages } = parsed.data;
 
   // Honeypot dolu: bot. Sessizce "başarılı" görünen bir cevap ver, LLM'e gitme.
   if (website && website.trim().length > 0) {
@@ -65,7 +66,27 @@ async function handle(req: NextRequest) {
   }
 
   const rate = await checkMessageRate(ip);
-  if (!rate.ok) return reply({ reply: rate.reason, done: false }, 429);
+  if (!rate.ok) return reply({ reply: rate.reason, done: !!leadId, leadId }, 429);
+
+  // --- Devam modu: talep zaten iletildi, soru-cevap ve geç iletişim bilgisi ---
+  if (leadId) {
+    const lead = await getLeadForSession(leadId, sessionId);
+    if (!lead) return NextResponse.json({ error: "Talep bulunamadı." }, { status: 400 });
+
+    const follow = await runFollowUpTurn(messages, lead.hasContact);
+    let contactAdded = false;
+    if (follow.type === "contact") {
+      contactAdded = await addLeadContact(leadId, sessionId, follow.contact.email, follow.contact.phone);
+    }
+    await updateLeadTranscript(leadId, sessionId, [...messages, { role: "assistant", content: follow.text }]);
+    return reply({
+      reply: follow.text,
+      chips: follow.type === "reply" ? follow.chips : [],
+      done: true,
+      leadId,
+      ...(contactAdded ? { contactAdded: true } : {}),
+    });
+  }
 
   const turn = await runChatTurn(messages);
 
@@ -100,7 +121,7 @@ async function handle(req: NextRequest) {
   if (analysis.is_spam) kind = "spam";
   else if (!hasContact) kind = "no_contact";
 
-  const leadId = await insertLead({
+  const newLeadId = await insertLead({
     sessionId,
     ip,
     name,
@@ -120,5 +141,5 @@ async function handle(req: NextRequest) {
     transcript,
   });
 
-  return reply({ reply: turn.text, done: true, leadId });
+  return reply({ reply: turn.text, done: true, leadId: newLeadId });
 }

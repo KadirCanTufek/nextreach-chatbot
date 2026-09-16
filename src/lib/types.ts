@@ -52,6 +52,8 @@ export interface ChatRequest {
   messages: ChatMessage[];
   /** Honeypot: gerçek kullanıcı bu alanı hiç görmez, boş kalmalıdır. */
   website?: string;
+  /** Talep iletildikten sonra sohbet devam ederse: mevcut talebin kimliği (devam modu). */
+  leadId?: string;
 }
 
 /** /api/chat cevabı */
@@ -61,4 +63,6 @@ export interface ChatResponse {
   chips?: string[];
   done: boolean;
   leadId?: string;
+  /** Devam modunda ziyaretçi sonradan iletişim bilgisi bıraktı ve talebe eklendi. */
+  contactAdded?: boolean;
 }

@@ -60,6 +60,8 @@ export default function ChatWidget({ open, onOpenChange }: Props) {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [done, setDone] = useState(false);
+  const [leadId, setLeadId] = useState<string | null>(null);
+  const [contactAdded, setContactAdded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [website, setWebsite] = useState(""); // honeypot
 
@@ -84,11 +86,11 @@ export default function ChatWidget({ open, onOpenChange }: Props) {
   }, [messages, sending, chips, open, reduce]);
 
   useEffect(() => {
-    if (open && !done) {
+    if (open) {
       const t = setTimeout(() => inputRef.current?.focus(), 150);
       return () => clearTimeout(t);
     }
-  }, [open, done]);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -100,7 +102,7 @@ export default function ChatWidget({ open, onOpenChange }: Props) {
   const send = useCallback(
     async (raw: string) => {
       const text = raw.trim();
-      if (!text || sending || done) return;
+      if (!text || sending) return;
       setError(null);
       setChips([]);
       const next: ChatMessage[] = [...messages, { role: "user", content: text }];
@@ -112,13 +114,15 @@ export default function ChatWidget({ open, onOpenChange }: Props) {
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId: session.id, startedAt: session.startedAt, website, messages: next }),
+          body: JSON.stringify({ sessionId: session.id, startedAt: session.startedAt, website, messages: next, ...(leadId ? { leadId } : {}) }),
         });
         const data = (await res.json()) as ChatResponse & { error?: string };
         if (!res.ok && !data.reply) throw new Error(data.error ?? "Bir sorun oluştu.");
         setMessages((m) => [...m, { role: "assistant", content: data.reply }]);
-        setChips(data.done ? [] : (data.chips ?? []));
+        setChips(data.chips ?? []);
         if (data.done) setDone(true);
+        if (data.leadId) setLeadId(data.leadId);
+        if (data.contactAdded) setContactAdded(true);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Bağlantı hatası. Tekrar deneyin.");
         setMessages(messages); // gönderilemeyen mesajı geri al
@@ -127,7 +131,7 @@ export default function ChatWidget({ open, onOpenChange }: Props) {
         setSending(false);
       }
     },
-    [messages, sending, done, website],
+    [messages, sending, website, leadId],
   );
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -141,6 +145,8 @@ export default function ChatWidget({ open, onOpenChange }: Props) {
     setMessages([{ role: "assistant", content: GREETING }]);
     setChips(GREETING_CHIPS);
     setDone(false);
+    setLeadId(null);
+    setContactAdded(false);
     setError(null);
     sessionRef.current = { id: crypto.randomUUID(), startedAt: Date.now() };
   }
@@ -257,7 +263,7 @@ export default function ChatWidget({ open, onOpenChange }: Props) {
 
               {/* Çipler */}
               <AnimatePresence>
-                {!sending && !done && chips.length > 0 && (
+                {!sending && chips.length > 0 && (
                   <motion.div
                     key={chips.join("|")}
                     initial={reduce ? false : { opacity: 0, y: 6 }}
@@ -286,11 +292,12 @@ export default function ChatWidget({ open, onOpenChange }: Props) {
 
               {done && (
                 <motion.div
+                  key={contactAdded ? "contact" : "done"}
                   initial={reduce ? false : { opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
                   className="self-center mt-2 text-xs text-slate-500 bg-white border border-slate-200 rounded-full px-3 py-1"
                 >
-                  Talebiniz ekibimize iletildi
+                  {contactAdded ? "İletişim bilginiz talebinize eklendi" : "Talebiniz ekibimize iletildi"}
                 </motion.div>
               )}
             </div>
@@ -305,41 +312,36 @@ export default function ChatWidget({ open, onOpenChange }: Props) {
               </label>
             </div>
 
-            {/* Giriş */}
+            {/* Giriş: talep iletildikten sonra da açık kalır (sorular, geç iletişim bilgisi) */}
             <div className="border-t border-slate-100 p-3 bg-white">
-              {done ? (
-                <div className="flex gap-2">
-                  <button onClick={resetChat} className="flex-1 rounded-xl border border-slate-200 py-3 font-medium text-slate-700 hover:bg-slate-50">
-                    Yeni sohbet
-                  </button>
-                  <button onClick={() => onOpenChange(false)} className="flex-1 rounded-xl bg-slate-900 text-white py-3 font-medium hover:bg-slate-800">
-                    Kapat
-                  </button>
-                </div>
-              ) : (
-                <div className="flex items-end gap-2">
-                  <textarea
-                    ref={inputRef}
-                    rows={1}
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={onKeyDown}
-                    placeholder="Mesajınızı yazın…"
-                    maxLength={1000}
-                    className="flex-1 resize-none rounded-xl border border-slate-200 px-3.5 py-2.5 text-[15px] focus:outline-none focus:ring-2 focus:ring-indigo-500 max-h-32"
-                  />
-                  <motion.button
-                    onClick={() => void send(input)}
-                    disabled={sending || !input.trim()}
-                    whileTap={reduce ? undefined : { scale: 0.92 }}
-                    transition={SPRING}
-                    className="h-11 w-11 rounded-xl bg-indigo-600 text-white grid place-items-center disabled:opacity-40 hover:bg-indigo-500"
-                    aria-label="Gönder"
-                  >
-                    <ArrowUp className="h-5 w-5" />
-                  </motion.button>
+              {done && (
+                <div className="flex items-center justify-between px-1 pb-2 text-xs text-slate-500">
+                  <span>Sorularınıza devam edebilirsiniz.</span>
+                  <button onClick={resetChat} className="text-indigo-600 hover:underline underline-offset-2">Yeni sohbet</button>
                 </div>
               )}
+              <div className="flex items-end gap-2">
+                <textarea
+                  ref={inputRef}
+                  rows={1}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={onKeyDown}
+                  placeholder={done ? "Sorunuz varsa yazın…" : "Mesajınızı yazın…"}
+                  maxLength={1000}
+                  className="flex-1 resize-none rounded-xl border border-slate-200 px-3.5 py-2.5 text-[15px] focus:outline-none focus:ring-2 focus:ring-indigo-500 max-h-32"
+                />
+                <motion.button
+                  onClick={() => void send(input)}
+                  disabled={sending || !input.trim()}
+                  whileTap={reduce ? undefined : { scale: 0.92 }}
+                  transition={SPRING}
+                  className="h-11 w-11 rounded-xl bg-indigo-600 text-white grid place-items-center disabled:opacity-40 hover:bg-indigo-500"
+                  aria-label="Gönder"
+                >
+                  <ArrowUp className="h-5 w-5" />
+                </motion.button>
+              </div>
             </div>
           </motion.div>
         )}
