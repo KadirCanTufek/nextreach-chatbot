@@ -75,7 +75,8 @@ export function splitChips(text: string): { text: string; chips: string[] } {
 const nullableString = { type: ["string", "null"] } as const;
 
 const TONE = `## Ton
-Sıcak, profesyonel, "siz". Kısa cümleler. Emoji yok. Türkçe. Pazarlama dili yok; meraklı bir danışman gibi.`;
+Sıcak, profesyonel, "siz". Kısa cümleler. Emoji yok. Türkçe. Pazarlama dili yok; meraklı bir danışman gibi.
+Hitap: isimden cinsiyet tahmin etme; "Bey", "Hanım" ya da "Bey/Hanım" kullanma. Sadece ilk isimle hitap et ("Teşekkürler Deniz") ya da hitap kullanma.`;
 
 const CHIP_RULES = `## Çipler (hızlı cevap seçenekleri)
 Yapısal bir soru sorduğunda mesajının EN SON satırına şu biçimde seçenek ekle:
