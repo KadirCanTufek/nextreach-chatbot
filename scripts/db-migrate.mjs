@@ -1,6 +1,7 @@
 // Mevcut veritabanını yeni şemaya taşır. Tekrar çalıştırılabilir (idempotent).
 // Tek başına: `npm run db:migrate`; `npm run db:setup` da şemadan sonra bunu çağırır.
 import { neon } from "@neondatabase/serverless";
+import { pathToFileURL } from "node:url";
 
 export async function migrate(sql) {
   const cols = await sql`SELECT column_name FROM information_schema.columns WHERE table_name = 'leads'`;
@@ -34,7 +35,8 @@ export async function migrate(sql) {
   return log;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Doğrudan çalıştırıldı mı? (Yol Türkçe karakter içerebilir; URL'e çevirip karşılaştır.)
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const url = process.env.DATABASE_URL;
   if (!url) {
     console.error("DATABASE_URL tanımlı değil. .env.local dosyasını doldurun.");
