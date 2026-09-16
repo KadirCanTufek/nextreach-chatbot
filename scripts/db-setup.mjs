@@ -11,9 +11,12 @@ if (!url) {
 const sql = neon(url);
 const schema = readFileSync(new URL("../src/lib/schema.sql", import.meta.url), "utf8");
 const statements = schema
+  .split("\n")
+  .filter((line) => !line.trim().startsWith("--")) // yorum satırlarını at
+  .join("\n")
   .split(/;\s*\n/)
   .map((s) => s.trim())
-  .filter((s) => s.length > 0 && !s.startsWith("--"));
+  .filter((s) => s.length > 0);
 
 for (const statement of statements) {
   await sql.query(statement);
