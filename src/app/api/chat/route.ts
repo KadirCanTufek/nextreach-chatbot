@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { analyzeLead, computeCompleteness, runChatTurn, runFollowUpTurn, scoreFromAnalysis, toNeedProfile, type TurnHooks } from "@/lib/claude";
-import { addLeadContact, getLeadForSession, insertLead, updateLeadTranscript } from "@/lib/db";
+import { addLeadContact, appendLeadTranscript, getLeadForSession, insertLead } from "@/lib/db";
 import { LIMITS, checkLeadRate, checkMessageRate, getClientIp } from "@/lib/rate-limit";
 import type { ChatMessage, ChatResponse, LeadKind } from "@/lib/types";
 
@@ -99,10 +99,11 @@ export async function POST(req: NextRequest) {
 async function handleFollowUp(body: BodyT, lead: { id: string; hasContact: boolean }, hooks: TurnHooks): Promise<ChatResponse> {
   const { sessionId, messages } = body;
   const follow = await runFollowUpTurn(messages, lead.hasContact, hooks);
-  const transcript: ChatMessage[] = [...messages, { role: "assistant", content: follow.text }];
+  // Yalnızca bu turun mesajları eklenir; istemcinin gönderdiği geçmiş kayıtlı transkriptin yerine geçmez.
+  const appended: ChatMessage[] = [messages[messages.length - 1], { role: "assistant", content: follow.text }];
 
   if (follow.type === "ended") {
-    await updateLeadTranscript(lead.id, sessionId, transcript);
+    await appendLeadTranscript(lead.id, sessionId, appended);
     return { reply: follow.text, done: true, leadId: lead.id, ended: follow.reason };
   }
 
@@ -110,7 +111,7 @@ async function handleFollowUp(body: BodyT, lead: { id: string; hasContact: boole
   if (follow.type === "contact") {
     contactAdded = await addLeadContact(lead.id, sessionId, follow.contact.email, follow.contact.phone);
   }
-  await updateLeadTranscript(lead.id, sessionId, transcript);
+  await appendLeadTranscript(lead.id, sessionId, appended);
   return {
     reply: follow.text,
     chips: follow.type === "reply" ? follow.chips : [],

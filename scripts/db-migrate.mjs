@@ -32,6 +32,11 @@ export async function migrate(sql) {
   await sql`ALTER TABLE leads ALTER COLUMN status SET DEFAULT 'waiting'`;
   await sql`ALTER TABLE leads ADD CONSTRAINT leads_status_check CHECK (status IN ('waiting', 'in_progress', 'positive', 'negative'))`;
 
+  // 003: rate_events.kind → 'login' eklendi (admin giriş denemesi sınırı)
+  await sql`ALTER TABLE rate_events DROP CONSTRAINT IF EXISTS rate_events_kind_check`;
+  await sql`ALTER TABLE rate_events ADD CONSTRAINT rate_events_kind_check CHECK (kind IN ('message', 'lead', 'login'))`;
+  log.push("rate_events.kind kısıtı doğrulandı (message, lead, login)");
+
   return log;
 }
 

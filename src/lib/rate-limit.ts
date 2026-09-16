@@ -7,6 +7,8 @@ export const LIMITS = {
   leadsPerDay: 10,
   maxMessagesPerSession: 40,
   maxMessageLength: 1000,
+  /** Admin giriş denemesi: 15 dakikada en fazla 10 (kaba kuvvete karşı). */
+  loginAttemptsPer15Min: 10,
 } as const;
 
 export type RateVerdict = { ok: true } | { ok: false; reason: string };
@@ -32,6 +34,17 @@ export async function checkLeadRate(ip: string): Promise<RateVerdict> {
   return { ok: true };
 }
 
+/** Başarısız admin giriş denemelerini sınırlar. Deneme, kontrol sırasında kaydedilir. */
+export async function checkLoginRate(ip: string): Promise<RateVerdict> {
+  const attempts = await countRateEvents(ip, "login", 15 * 60);
+  if (attempts >= LIMITS.loginAttemptsPer15Min) {
+    return { ok: false, reason: "Çok fazla deneme. 15 dakika sonra tekrar deneyin." };
+  }
+  await recordRateEvent(ip, "login");
+  return { ok: true };
+}
+
+/** Vercel'de x-forwarded-for platform tarafından yazılır; ilk değer istemci IP'sidir. */
 export function getClientIp(headers: Headers): string {
   const forwarded = headers.get("x-forwarded-for");
   if (forwarded) return forwarded.split(",")[0].trim();

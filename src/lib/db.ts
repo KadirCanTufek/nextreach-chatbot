@@ -132,19 +132,22 @@ export async function addLeadContact(id: string, sessionId: string, email: strin
   return rows.length > 0;
 }
 
-export async function updateLeadTranscript(id: string, sessionId: string, transcript: ChatMessage[]): Promise<void> {
+/** Devam modundaki yeni mesajları kayıtlı transkriptin SONUNA ekler (istemci geçmişi yerine geçmez). */
+export async function appendLeadTranscript(id: string, sessionId: string, newMessages: ChatMessage[]): Promise<void> {
   const sql = getSql();
-  await sql`UPDATE leads SET transcript = ${JSON.stringify(transcript)}::jsonb WHERE id = ${id}::uuid AND session_id = ${sessionId}`;
+  await sql`UPDATE leads SET transcript = transcript || ${JSON.stringify(newMessages)}::jsonb WHERE id = ${id}::uuid AND session_id = ${sessionId}`;
 }
 
 // --- Rate limit ---
 
-export async function recordRateEvent(ip: string, kind: "message" | "lead"): Promise<void> {
+export type RateEventKind = "message" | "lead" | "login";
+
+export async function recordRateEvent(ip: string, kind: RateEventKind): Promise<void> {
   const sql = getSql();
   await sql`INSERT INTO rate_events (ip, kind) VALUES (${ip}, ${kind})`;
 }
 
-export async function countRateEvents(ip: string, kind: "message" | "lead", windowSeconds: number): Promise<number> {
+export async function countRateEvents(ip: string, kind: RateEventKind, windowSeconds: number): Promise<number> {
   const sql = getSql();
   const rows = await sql`
     SELECT count(*)::int AS n FROM rate_events

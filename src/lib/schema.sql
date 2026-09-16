@@ -38,7 +38,7 @@ CREATE INDEX IF NOT EXISTS leads_kind_idx ON leads (kind);
 CREATE TABLE IF NOT EXISTS rate_events (
   id         bigserial PRIMARY KEY,
   ip         text NOT NULL,
-  kind       text NOT NULL CHECK (kind IN ('message', 'lead')),
+  kind       text NOT NULL CHECK (kind IN ('message', 'lead', 'login')),
   created_at timestamptz NOT NULL DEFAULT now()
 );
 

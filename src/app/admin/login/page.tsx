@@ -19,8 +19,12 @@ export default function AdminLoginPage() {
       body: JSON.stringify({ key }),
     });
     setBusy(false);
-    if (res.ok) router.push("/admin");
-    else setError("Anahtar hatalı.");
+    if (res.ok) {
+      router.push("/admin");
+      return;
+    }
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    setError(body.error ?? "Anahtar hatalı.");
   }
 
   return (

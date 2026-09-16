@@ -5,7 +5,7 @@ Landing page'de sağ altta duran bir asistan (**Reach**), ziyaretçiyi kısa bir
 **Repo:** https://github.com/KadirCanTufek/nextreach-chatbot
 **Canlı link:** https://nextreach-chatbot-tau.vercel.app
 **Admin:** https://nextreach-chatbot-tau.vercel.app/admin (erişim anahtarı ile)
-**Toplam süre:** _(teslimde doldurulacak)_
+**Toplam süre:** ~4 saat 20 dakika, tek oturum (16 Eylül 2026, 11:02–15:20). Saat bazlı döküm: [TIMESHEET.md](TIMESHEET.md). Kalite ve güvenlik turu: [docs/kalite-ve-guvenlik-raporu.md](docs/kalite-ve-guvenlik-raporu.md).
 
 ---
 
@@ -124,6 +124,7 @@ Katmanlı:
 - **Tur sınırı:** 14 asistan mesajı; sohbet sonsuza uzayamaz.
 - **LLM spam sınıflandırması:** analiz aşamasında anlamsız/alakasız içerik `spam` sekmesine düşer, silinmez.
 - **Kapsam sınırı:** konu dışı istekler reddedilir, ısrarda sohbet kapatılır (bkz. 2. bölüm). Botu genel amaçlı bir asistan gibi kullanmak mümkün değil.
+- **Admin tarafı:** giriş denemesi IP başına 15 dakikada 10; admin API mutasyonları yalnızca aynı origin'den; güvenlik başlıkları (nosniff, frame DENY, referrer, permissions, HSTS). Ayrıntı: `docs/kalite-ve-guvenlik-raporu.md`.
 - Tüm doğrulama sunucuda tekrar yapılır; istemciye güvenilmez.
 
 **Neden honeypot yok:** İlk sürümde vardı, formla birlikte kaldırdım. Honeypot, sayfadaki tüm alanları körlemesine dolduran basit form botlarını yakalar; artık gizli alan tıklanınca açılan bir panelin içinde olurdu ve o botlar paneli açmaz. API'ye doğrudan istek atan botlar ise gizli alanı zaten doldurmaz. Sohbet arayüzünde gerçek koruma rate limit, zamanlama, tur kuralları ve içerik sınıflandırmasıdır; hedefli bot trafiği için sıradaki adım Turnstile.
@@ -167,6 +168,8 @@ src/
     admin-auth.ts             Anahtar/cookie doğrulaması
     schema.sql                Veri şeması
   proxy.ts                    /admin ve /api/admin koruması
+docs/kalite-ve-guvenlik-raporu.md   Kalite ve güvenlik turu: yöntem, bulgular, düzeltmeler, öneriler
+TIMESHEET.md                        Saat bazlı çalışma dökümü
 scripts/
   db-setup.mjs                Şemayı uygular, göçleri çalıştırır
   db-migrate.mjs              Göçler (skor → 10 puan + rubrik, durum adları)
