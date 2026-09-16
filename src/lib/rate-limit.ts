@@ -4,7 +4,7 @@ import { countRateEvents, recordRateEvent } from "./db";
 export const LIMITS = {
   messagesPerMinute: 20,
   messagesPerHour: 120,
-  leadsPerDay: 5,
+  leadsPerDay: 10,
   maxMessagesPerSession: 40,
   maxMessageLength: 1000,
 } as const;

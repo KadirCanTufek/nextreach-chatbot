@@ -114,7 +114,7 @@ Model **sayı uydurmaz, bileşen seçer**; toplamı kod toplar. Değerlendirme i
 Katmanlı:
 - **Zamanlama:** sohbet açıldıktan 3 saniye içinde biten bir talep insan hızında değildir; kaydedilmez.
 - **En az 4 ziyaretçi mesajı** olmadan talep oluşmaz; tek mesajlık "spray" denemeleri kayda dönüşemez.
-- **IP rate limit** (Postgres'te): dakikada 20, saatte 120 mesaj; günde 5 talep. Oturum başına 40 mesaj, mesaj başına 1000 karakter. LLM maliyetini de sınırlar.
+- **IP rate limit** (Postgres'te): dakikada 20, saatte 120 mesaj; günde 10 talep (aynı ofisten birkaç kişi deneyebilsin diye 5 değil 10). Oturum başına 40 mesaj, mesaj başına 1000 karakter. LLM maliyetini de sınırlar.
 - **Tur sınırı:** 14 asistan mesajı; sohbet sonsuza uzayamaz.
 - **LLM spam sınıflandırması:** analiz aşamasında anlamsız/alakasız içerik `spam` sekmesine düşer, silinmez.
 - Tüm doğrulama sunucuda tekrar yapılır; istemciye güvenilmez.
