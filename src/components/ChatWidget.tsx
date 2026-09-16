@@ -5,7 +5,7 @@ import { ArrowUp, MessageCircle, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader } from "@/components/motion/loader";
 import { ASSISTANT_NAME, GREETING, GREETING_CHIPS, TEASER_DELAY_MS, TEASER_SESSION_KEY, TEASER_TEXT } from "@/lib/chat-config";
-import type { ChatMessage, ChatResponse } from "@/lib/types";
+import type { ChatMessage, ChatResponse, EndReason } from "@/lib/types";
 
 const SPRING = { type: "spring", stiffness: 380, damping: 32, mass: 0.8 } as const;
 
@@ -62,6 +62,7 @@ export default function ChatWidget({ open, onOpenChange }: Props) {
   const [done, setDone] = useState(false);
   const [leadId, setLeadId] = useState<string | null>(null);
   const [contactAdded, setContactAdded] = useState(false);
+  const [ended, setEnded] = useState<EndReason | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const listRef = useRef<HTMLDivElement>(null);
@@ -101,7 +102,7 @@ export default function ChatWidget({ open, onOpenChange }: Props) {
   const send = useCallback(
     async (raw: string) => {
       const text = raw.trim();
-      if (!text || sending) return;
+      if (!text || sending || ended) return;
       setError(null);
       setChips([]);
       const next: ChatMessage[] = [...messages, { role: "user", content: text }];
@@ -119,7 +120,8 @@ export default function ChatWidget({ open, onOpenChange }: Props) {
         if (!res.ok && !data.reply) throw new Error(data.error ?? "Bir sorun oluştu.");
         setMessages((m) => [...m, { role: "assistant", content: data.reply }]);
         setChips(data.chips ?? []);
-        if (data.done) setDone(true);
+        if (data.ended) setEnded(data.ended);
+        else if (data.done) setDone(true);
         if (data.leadId) setLeadId(data.leadId);
         if (data.contactAdded) setContactAdded(true);
       } catch (err) {
@@ -130,7 +132,7 @@ export default function ChatWidget({ open, onOpenChange }: Props) {
         setSending(false);
       }
     },
-    [messages, sending, leadId],
+    [messages, sending, leadId, ended],
   );
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -146,6 +148,7 @@ export default function ChatWidget({ open, onOpenChange }: Props) {
     setDone(false);
     setLeadId(null);
     setContactAdded(false);
+    setEnded(null);
     setError(null);
     sessionRef.current = { id: crypto.randomUUID(), startedAt: Date.now() };
   }
@@ -289,7 +292,16 @@ export default function ChatWidget({ open, onOpenChange }: Props) {
                 )}
               </AnimatePresence>
 
-              {done && (
+              {ended && (
+                <motion.div
+                  initial={reduce ? false : { opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="self-center mt-2 text-xs text-slate-500 bg-white border border-slate-200 rounded-full px-3 py-1"
+                >
+                  Sohbet sonlandırıldı
+                </motion.div>
+              )}
+              {done && !ended && (
                 <motion.div
                   key={contactAdded ? "contact" : "done"}
                   initial={reduce ? false : { opacity: 0, scale: 0.95 }}
@@ -305,9 +317,9 @@ export default function ChatWidget({ open, onOpenChange }: Props) {
 
             {/* Giriş: talep iletildikten sonra da açık kalır (sorular, geç iletişim bilgisi) */}
             <div className="border-t border-slate-100 p-3 bg-white">
-              {done && (
+              {(done || ended) && (
                 <div className="flex items-center justify-between px-1 pb-2 text-xs text-slate-500">
-                  <span>Sorularınıza devam edebilirsiniz.</span>
+                  <span>{ended ? "Bu sohbet kapatıldı." : "Sorularınıza devam edebilirsiniz."}</span>
                   <button onClick={resetChat} className="text-indigo-600 hover:underline underline-offset-2">Yeni sohbet</button>
                 </div>
               )}
@@ -318,13 +330,14 @@ export default function ChatWidget({ open, onOpenChange }: Props) {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={onKeyDown}
-                  placeholder={done ? "Sorunuz varsa yazın…" : "Mesajınızı yazın…"}
+                  placeholder={ended ? "Yeni sohbet başlatabilirsiniz" : done ? "Sorunuz varsa yazın…" : "Mesajınızı yazın…"}
+                  disabled={ended !== null}
                   maxLength={1000}
                   className="flex-1 resize-none rounded-xl border border-slate-200 px-3.5 py-2.5 text-[15px] focus:outline-none focus:ring-2 focus:ring-indigo-500 max-h-32"
                 />
                 <motion.button
                   onClick={() => void send(input)}
-                  disabled={sending || !input.trim()}
+                  disabled={sending || !input.trim() || ended !== null}
                   whileTap={reduce ? undefined : { scale: 0.92 }}
                   transition={SPRING}
                   className="h-11 w-11 rounded-xl bg-indigo-600 text-white grid place-items-center disabled:opacity-40 hover:bg-indigo-500"

@@ -86,4 +86,8 @@ export interface ChatResponse {
   leadId?: string;
   /** Devam modunda ziyaretçi sonradan iletişim bilgisi bıraktı ve talebe eklendi. */
   contactAdded?: boolean;
+  /** Sohbet kapsam dışı ısrar ya da hakaret nedeniyle kapatıldı; talep oluşmadı. */
+  ended?: EndReason;
 }
+
+export type EndReason = "off_topic" | "abusive";

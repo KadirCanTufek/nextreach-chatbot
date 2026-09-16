@@ -68,6 +68,10 @@ async function handle(req: NextRequest) {
     if (!lead) return NextResponse.json({ error: "Talep bulunamadı." }, { status: 400 });
 
     const follow = await runFollowUpTurn(messages, lead.hasContact);
+    if (follow.type === "ended") {
+      await updateLeadTranscript(leadId, sessionId, [...messages, { role: "assistant", content: follow.text }]);
+      return reply({ reply: follow.text, done: true, leadId, ended: follow.reason });
+    }
     let contactAdded = false;
     if (follow.type === "contact") {
       contactAdded = await addLeadContact(leadId, sessionId, follow.contact.email, follow.contact.phone);
@@ -86,6 +90,10 @@ async function handle(req: NextRequest) {
 
   if (turn.type === "reply") {
     return reply({ reply: turn.text, chips: turn.chips, done: false });
+  }
+  if (turn.type === "ended") {
+    // Kapsam dışı ısrar ya da hakaret: talep oluşmaz, kayıt yok.
+    return reply({ reply: turn.text, done: true, ended: turn.reason });
   }
 
   // --- Sohbet bitti: talep oluştur ---

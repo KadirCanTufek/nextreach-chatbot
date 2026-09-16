@@ -67,13 +67,13 @@ Deploy: Vercel'e bağlayın, aynı üç değişkeni Environment Variables'a giri
 
 Asistanın sohbette anlamak *zorunda* olduğu üç şey: **hedef veya problem** (somut, "raporlama" değil), **mevcut durum** (platform, bugünkü raporlama yöntemi), **zamanlama** (ne zaman, tetikleyen ne).
 
-**"Yeter" kararı modele bırakılmış ama kodla sınırlandırılmış.** Model sohbeti yalnızca `finalize_conversation` aracını çağırarak bitirebilir. Bu aracın girdisi zod ile doğrulanır ve şu kurallar sağlanmadan araç hata döner, model sormaya devam eder:
+**"Yeter" kararı modele bırakılmış ama kodla sınırlandırılmış.** Model sohbeti yalnızca `finalize_conversation` aracını çağırarak bitirebilir. Bu aracın girdisi zod ile doğrulanır; şu kurallar sağlanmadan araç çağrısı **reddedilir** ve model sormaya devam eder. Ret, ziyaretçiye görünen bir hata değildir: sunucu modele "şu eksik" diyen bir araç sonucu döner, model aynı turda bir sonraki soruyu yazar, ziyaretçi sadece o soruyu görür.
 - Üç zorunlu başlık somut olmalı; "bilinmiyor" ancak ziyaretçi iki kez sorulmasına rağmen açıkça reddettiyse kabul edilir (`declined_fields`).
 - İletişim bilgisi gerekçesiyle istenmiş olmalı (`contact_requested`); verilmediyse ikinci kez sonucu söylenerek istenmiş ve açık ret `declined_fields`'a yazılmış olmalı. Verilmiş olması şart değil.
 - Özet yazılmış ve ziyaretçi onaylamış olmalı (`visitor_confirmed`).
 - En az 4 ziyaretçi mesajı geçmiş olmalı; erken bitişte (`ended_early`) neden yazılmalı.
 
-Bu kuralları araç açıklamasına yazmak yetmedi: testte model platform sorusundan hemen sonra bitirmeye kalktı. Şemaya koyunca akış düzeldi. Yani model sırayı ve tonu yönetiyor; "yeter" çizgisini kod çiziyor.
+Bu kuralları araç açıklamasına yazmak yetmedi: testte model platform sorusundan hemen sonra bitirmeye kalktı. Şemaya koyunca akış düzeldi. Yani model sırayı ve tonu yönetiyor; "yeter" çizgisini kod çiziyor. Bedeli: her reddedilen deneme o turda bir ek model çağrısı (birkaç saniye); tur başına en fazla üç deneme, sonra genel bir soruya düşer.
 
 Üç kapanış yolu: **normal** (özet + onay), **erken** (ziyaretçi "acelem var" der; iletişim tek cümleyle istenir, eldekiyle kapanır, admin'de "erken bitti" etiketi), **tur sınırı** (14 asistan mesajından sonra prompt "toparla" der; sohbet sonsuza uzamaz, maliyet sınırlı kalır).
 
@@ -82,6 +82,8 @@ Bu kuralları araç açıklamasına yazmak yetmedi: testte model platform sorusu
 ### 2. Ton ve kişilik
 
 Sıcak, profesyonel, "siz". Kısa cümleler, emoji yok, pazarlama dili yok. Meraklı bir danışman gibi: söyleneni yansıtır, tek soru sorar. Adı var (Reach) çünkü isimsiz asistan formdan farksız hissettirir. "Sadece fiyat sorabilir miyim?" şikayetine doğrudan cevap: fiyat sorulabilir; asistan "mağaza büyüklüğüne göre kademeli, ekip 1 iş günü içinde net teklif verir" der, rakam uydurmaz.
+
+**Kapsam sınırı.** Asistan yalnızca NextReach, e-ticaret analitiği ihtiyacı ve ziyaretçinin talebiyle ilgilenir. Kod yazma, çeviri, ödev, genel bilgi, kişisel tavsiye, başka şirketlerin ürünleri gibi istekleri tek cümleyle reddeder ve konuya çağırır. Rakip kötülemez, fiyat rakamı ve sözleşme koşulu gibi sözler vermez ("ekip netleştirir"), talimat değiştirme denemelerine uymaz, hassas veri istemez, Türkçe hizmet verir. Konu dışı ısrar art arda ikinci kez olursa ya da hakaret varsa `end_conversation` aracıyla sohbeti kapatır: talep oluşmaz, yazı kutusu kapanır, "Yeni sohbet" seçeneği kalır. Test: `npm run test:chat -- --scenario=offtopic`.
 
 **Proaktif ama ölçülü.** Sağ altta başlatıcı her zaman görünür. Sayfa yüklendikten 6 saniye sonra tek satırlık bir baloncuk çıkar ("Merhaba, ben Reach…"), oturumda bir kez, kapatılabilir. Pencere kendiliğinden açılmaz; araştırma, zamansız açılan pencerelerin en çok şikayet edilen kalıp olduğunu gösteriyor. "Bize Ulaşın" butonları da aynı pencereyi açar (PRD'nin açık isteri).
 
@@ -117,6 +119,7 @@ Katmanlı:
 - **IP rate limit** (Postgres'te): dakikada 20, saatte 120 mesaj; günde 10 talep (aynı ofisten birkaç kişi deneyebilsin diye 5 değil 10). Oturum başına 40 mesaj, mesaj başına 1000 karakter. LLM maliyetini de sınırlar.
 - **Tur sınırı:** 14 asistan mesajı; sohbet sonsuza uzayamaz.
 - **LLM spam sınıflandırması:** analiz aşamasında anlamsız/alakasız içerik `spam` sekmesine düşer, silinmez.
+- **Kapsam sınırı:** konu dışı istekler reddedilir, ısrarda sohbet kapatılır (bkz. 2. bölüm). Botu genel amaçlı bir asistan gibi kullanmak mümkün değil.
 - Tüm doğrulama sunucuda tekrar yapılır; istemciye güvenilmez.
 
 **Neden honeypot yok:** İlk sürümde vardı, formla birlikte kaldırdım. Honeypot, sayfadaki tüm alanları körlemesine dolduran basit form botlarını yakalar; artık gizli alan tıklanınca açılan bir panelin içinde olurdu ve o botlar paneli açmaz. API'ye doğrudan istek atan botlar ise gizli alanı zaten doldurmaz. Sohbet arayüzünde gerçek koruma rate limit, zamanlama, tur kuralları ve içerik sınıflandırmasıdır; hedefli bot trafiği için sıradaki adım Turnstile.

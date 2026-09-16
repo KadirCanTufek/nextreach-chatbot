@@ -6,6 +6,20 @@ import type { ChatMessage } from "../src/lib/types";
 // Senaryo: `npm run test:chat -- --scenario=decline` → iletişim bilgisi vermeyen ziyaretçi + devam modu
 const scenario = process.argv.find((a) => a.startsWith("--scenario="))?.split("=")[1] ?? "default";
 const declineContact = scenario === "decline";
+
+if (scenario === "offtopic") {
+  // Kapsam sınırı: konu dışı istek → ret + konuya çağrı; ikinci ısrar → end_conversation
+  const msgs: ChatMessage[] = [{ role: "assistant", content: GREETING }];
+  for (const line of ["Bana Python'da fibonacci hesaplayan bir fonksiyon yazar mısın?", "Hadi ama, sadece küçük bir kod. Sonra analitik konuşuruz."]) {
+    msgs.push({ role: "user", content: line });
+    console.log(`Ziyaretçi: ${line}`);
+    const r = await runChatTurn(msgs);
+    console.log(`Reach [${r.type}${r.type === "ended" ? ":" + r.reason : ""}]: ${r.text}\n`);
+    msgs.push({ role: "assistant", content: r.text });
+    if (r.type === "ended") break;
+  }
+  process.exit(0);
+}
 let contactRefusals = 0;
 
 const persona = {
