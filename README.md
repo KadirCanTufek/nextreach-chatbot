@@ -5,7 +5,7 @@ Landing page'de sağ altta duran bir asistan (**Reach**), ziyaretçiyi kısa bir
 **Repo:** https://github.com/KadirCanTufek/nextreach-chatbot
 **Canlı link:** https://nextreach-chatbot-tau.vercel.app
 **Admin:** https://nextreach-chatbot-tau.vercel.app/admin (erişim anahtarı ile)
-**Toplam süre:** ~4 saat 30 dakika (16 Eylül 2026; 11:02–15:24 ve 16:05–16:15; 15:24–16:05 arası toplantı, süreye dahil değil). Saat bazlı döküm: [TIMESHEET.md](TIMESHEET.md). Kalite ve güvenlik turu: [kalite-ve-guvenlik-raporu.md](kalite-ve-guvenlik-raporu.md).
+**Toplam süre:** ~4 saat 10 dakika (16 Eylül 2026; 11:02–15:00 ve 16:05–16:15; 15:00–16:05 arası toplantı, süreye dahil değil). Saat bazlı döküm: [TIMESHEET.md](TIMESHEET.md). Kalite ve güvenlik turu: [kalite-ve-guvenlik-raporu.md](kalite-ve-guvenlik-raporu.md).
 
 ---
 
