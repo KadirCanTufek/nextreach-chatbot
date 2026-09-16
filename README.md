@@ -5,7 +5,7 @@ Landing page'de sağ altta duran bir asistan (**Reach**), ziyaretçiyi kısa bir
 **Repo:** https://github.com/KadirCanTufek/nextreach-chatbot
 **Canlı link:** https://nextreach-chatbot-tau.vercel.app
 **Admin:** https://nextreach-chatbot-tau.vercel.app/admin (erişim anahtarı ile)
-**Toplam süre:** ~4 saat 20 dakika, tek oturum (16 Eylül 2026, 11:02–15:20). Saat bazlı döküm: [TIMESHEET.md](TIMESHEET.md). Kalite ve güvenlik turu: [kalite-ve-guvenlik-raporu.md](kalite-ve-guvenlik-raporu.md).
+**Toplam süre:** ~4 saat 30 dakika (16 Eylül 2026; 11:02–15:24 ve 16:05–16:15; 15:24–16:05 arası toplantı, süreye dahil değil). Saat bazlı döküm: [TIMESHEET.md](TIMESHEET.md). Kalite ve güvenlik turu: [kalite-ve-guvenlik-raporu.md](kalite-ve-guvenlik-raporu.md).
 
 ---
 
@@ -135,6 +135,15 @@ Katmanlı:
 - İletişim bilgisi vermek istemezse: **iki aşama, sonra saygı.** İlk istek gerekçeli. Reddedilirse ikinci ve son istek sonucu açıkça söyler: iletişim bilgisi olmadan ekip dönüş yapamaz, talep kayda geçer ama cevapsız kalır; bilgi yalnızca bu konuda kullanılır. Yine reddederse suçlama yok, "kapatıldı" yok: asistan notların ekibe iletildiğini, bu haliyle ulaşılamayacağını tek cümleyle söyler, kapıyı açık bırakır (bu pencere ya da satış e-postası) ve ürün sorularına devam etmeyi teklif eder. Talep **İletişimsiz** sekmesine düşer; satış arayamaz ama pazarlama "insanlar ne soruyor" diye okuyabilir.
 - **Devam modu.** Talep iletildikten sonra yazı kutusu kapanmaz. Ziyaretçi soru sormaya devam edebilir; iletişim bilgisi bırakmadıysa fiyat/teklif/demo sorduğunda asistan cevabını verir ve tek cümleyle "net teklif için e-posta ya da telefon gerekir" diye hatırlatır. Sonradan e-posta veya telefon yazarsa `add_contact` aracıyla **aynı talebe eklenir**, talep İletişimsiz'den Nitelikli'ye geçer, sohbetin devamı da kayda işlenir. Yani "kapı açık" sözü gerçek.
 - Kapanışta paylaşılan satış adresi (`satis@nextreach.com`) bir **yer tutucu**; PRD'de gerçek adres yok. `SALES_EMAIL` ortam değişkeniyle değiştirilir.
+
+**Form yerine sohbet kararının dayandığı kaynaklar**
+
+- Form vs sohbet dönüşümü: [Wonderchat, B2B Website Conversion Benchmark 2026](https://wonderchat.io/blog/b2b-website-conversion-report-2026) · [Which-50, chat-to-conversion by industry](https://which-50.com/chat-to-conversion-rate-statistics-by-industry/)
+- Alıcıların form doldurmama nedenleri (%81 doldurmuyor, %71 güven): [Qualified, 40 conversational marketing stats](https://www.qualified.com/plus/articles/40-conversational-marketing-stats-you-need-to-know)
+- Konuşma biçimli formların kısa formlarda avantaj sağlamadığı, kazancın "önce değer, sonra iletişim" sırasından geldiği: [TinyCommand, conversational vs traditional forms](https://tinycommand.com/blogs/conversational-forms-vs-traditional-forms-which-is-better-for-your-business)
+- Proaktif karşılama ve zamanlama (5-10 sn, oturumda bir kez): [REVE Chat](https://www.revechat.com/blog/proactive-chat/) · [ChatBot.com best practices](https://www.chatbot.com/chatbot-best-practices/) · [Crisp](https://crisp.chat/en/blog/live-chat-welcome-message-best-tips-greetings/) · sayfaya özel karşılama: [Kaily](https://www.kaily.ai/blog/best-chatbot-welcome-messages)
+- İletişim bilgisini ne zaman istemek: [ChatBot.com, lead qualification](https://www.chatbot.com/blog/mastering-lead-qualification-with-chatbots/) · [Intercom, e-posta zorunluluğu](https://www.intercom.com/help/en/articles/2301967-require-leads-to-give-their-email-to-start-a-conversation)
+- Pencere otomatik açılmasın, baloncuk yeter: [Noform, widget positioning](https://noform.ai/blog/chatbot-widget-positioning/) · [NN/g, Popup Problems](https://www.nngroup.com/videos/popup-problems/)
 
 ---
 

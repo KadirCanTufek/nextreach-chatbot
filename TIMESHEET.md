@@ -1,6 +1,6 @@
 # Timesheet — NextReach Web Chatbot İletişim Agent'ı
 
-**Tarih:** 16 Eylül 2026 · **Başlangıç:** 11:02 · **Bitiş:** ~15:20 · **Toplam:** ~4 saat 20 dakika, tek oturum, ara yok.
+**Tarih:** 16 Eylül 2026 · **Başlangıç:** 11:02 · **Bitiş:** 16:15 · **Çalışma süresi:** ~4 saat 30 dakika (11:02–15:24 ve 16:05–16:15). **Ara:** 15:24–16:05 toplantı, süreye dahil değil; teslim bildirimi bu nedenle gecikti.
 Zamanlar Europe/Istanbul. Kaynak: git commit zamanları (`git log --date=format:'%H:%M'`), altyapı oluşturma zamanları (Vercel projesi 12:37, Neon projesi 12:44) ve karar notu.
 
 ## Saat bazlı döküm
@@ -18,7 +18,9 @@ Zamanlar Europe/Istanbul. Kaynak: git commit zamanları (`git log --date=format:
 | 14:04–14:21 | 17 dk | **Puanlama ve durumlar** | Skor Sıcak/Ilık/Soğuk → 10 üzerinden rubrikli puan (4 bileşen model, iletişim bileşeni ve toplam kod); durumlar Bekliyor/İşlemde/Olumlu/Olumsuz; admin puan rozeti ve bileşen çubukları; idempotent göç scripti; göçün yol hatası düzeltildi; canlı doğrulama; günlük talep limiti 10. | Commit 14:16-14:21 |
 | 14:21–14:37 | 16 dk | **Kapsam sınırı ve dokümantasyon** | Kapsam sınırı: kesin kapsam kuralları ve `end_conversation` aracı (konu dışı ısrar/hakaret → kapatma, talep yok); limit tartışması ve kararı; README'de "yeter" reddinin açıklaması ve yapılamayanlar listesi. | Commit 14:30-14:37 |
 | 14:37–14:52 | 15 dk | **Streaming, hafıza ve arama** | Streaming (NDJSON olay akışı, çip kapısı, reset), tarayıcı hafızası (sessionStorage), admin arama kutusu; README "nice to have" düzeni; Playwright ve canlı akış testleri. | Commit 14:52 |
-| 14:52–15:20 | ~28 dk | **Kapanış: timesheet, güvenlik, paket** | Timesheet; kalite ve güvenlik turu (bağımlılık denetimi, başlıklar, çerez, CSRF, kaba kuvvet, transkript bütünlüğü, giriş doğrulama); düzeltmeler ve rapor; paketleme. | `TIMESHEET.md`, `kalite-ve-guvenlik-raporu.md` |
+| 14:52–15:24 | 32 dk | **Kapanış: timesheet, güvenlik, rapor** | Timesheet; kalite ve güvenlik turu (bağımlılık denetimi, başlıklar, çerez, CSRF, kaba kuvvet, transkript bütünlüğü, giriş doğrulama); düzeltmeler ve rapor; timesheet başlıkları; raporun repo köküne taşınması. | `TIMESHEET.md`, `kalite-ve-guvenlik-raporu.md`, commit 15:04-15:24 |
+| 15:24–16:05 | — | **Ara: toplantı** | Proje dışı toplantı; bu saatlerde çalışma yapılmadı, süreye dahil değil. Teslim bildirimi bu nedenle gecikti. | — |
+| 16:05–16:15 | 10 dk | **Teslim** | README'ye form yerine sohbet kararının kaynak listesi; timesheet'e ara notu ve toplam süre; son kontrol ve push. | Son commit |
 
 ## Plan ile gerçekleşen
 
@@ -33,4 +35,4 @@ Zamanlar Europe/Istanbul. Kaynak: git commit zamanları (`git log --date=format:
 | README ve kapanış | 35 dk | ~30 dk | README beş kez revize edildi |
 | Tampon | 20 dk | — | Araştırma ve ürün tartışmaları için kullanıldı |
 
-Toplam plan 360 dk, gerçekleşen ~260 dk.
+Toplam plan 360 dk, gerçekleşen ~270 dk (ara hariç).
