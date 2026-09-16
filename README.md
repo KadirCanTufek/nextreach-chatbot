@@ -139,9 +139,10 @@ Katmanlı:
 - **Oturum kalıcılığı.** Sayfa yenilenirse sohbet gider. `sessionStorage` ile 10 dakikalık iş.
 - **Sayfaya özel karşılama.** Fiyatlandırma bölümünden gelen ziyaretçiye farklı baloncuk; araştırmaya göre %25-35 daha iyi etkileşim.
 - **Cloudflare Turnstile.** Rate limit, zamanlama ve tur kuralları yeterli başlangıç; hedefli bot trafiği için görünmez captcha.
-- **E-posta bildirimi.** Kapsam dışıydı; Resend ile "yeni sıcak lead" maili 20 dakika.
+- **E-posta bildirimi.** Kapsam dışıydı; Resend ile "8+ puanlı yeni talep" maili 20 dakika.
 - **Admin'de arama ve sayfalama.** 500 kayıt limiti var, arama yok.
-- **Eval seti.** `scripts/test-chat.mts` tek senaryo; 20-30 senaryoyla "yeter" kararının ve skorlamanın tutarlılığını sayıyla ölçmek isterim.
+- **Eval seti.** `scripts/test-chat.mts` üç senaryo (normal, iletişim reddi + devam modu, konu dışı); 20-30 senaryoyla "yeter" kararının ve puanlamanın tutarlılığını sayıyla ölçmek isterim.
+- **Geç gelen iletişimde tam yeniden puanlama.** Ziyaretçi e-postasını talep kaydedildikten sonra bırakırsa yalnızca iletişim bileşeni 1'e çıkar; diğer bileşenler ve gerekçe yeniden hesaplanmaz.
 - **Prompt cache.** Sistem promptu her turda küçük değişiyor (tur sayacı). Sayacı kullanıcı mesajına taşıyıp sistem promptunu sabitlemek cache'i açar.
 
 ---
