@@ -50,8 +50,6 @@ export interface ChatRequest {
   sessionId: string;
   startedAt: number;
   messages: ChatMessage[];
-  /** Honeypot: gerçek kullanıcı bu alanı hiç görmez, boş kalmalıdır. */
-  website?: string;
   /** Talep iletildikten sonra sohbet devam ederse: mevcut talebin kimliği (devam modu). */
   leadId?: string;
 }

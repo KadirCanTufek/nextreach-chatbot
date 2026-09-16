@@ -14,7 +14,6 @@ const MIN_CONVERSATION_MS = 3000;
 const Body = z.object({
   sessionId: z.string().min(8).max(64),
   startedAt: z.number().int().positive(),
-  website: z.string().optional(), // honeypot
   leadId: z.string().uuid().optional(), // devam modu
   messages: z
     .array(
@@ -53,12 +52,7 @@ async function handle(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Geçersiz istek.", issues: parsed.error.issues }, { status: 400 });
   }
-  const { sessionId, startedAt, website, leadId, messages } = parsed.data;
-
-  // Honeypot dolu: bot. Sessizce "başarılı" görünen bir cevap ver, LLM'e gitme.
-  if (website && website.trim().length > 0) {
-    return reply({ reply: "Teşekkürler, ekibimiz sizinle iletişime geçecek.", done: true });
-  }
+  const { sessionId, startedAt, leadId, messages } = parsed.data;
 
   const lastMessage = messages[messages.length - 1];
   if (lastMessage.role !== "user" || !lastMessage.content.trim()) {

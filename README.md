@@ -101,12 +101,14 @@ Sohbet bitince ikinci bir Claude çağrısı (yapılandırılmış çıktı) tal
 ### 5. Kötü niyetli kullanım (spam, boş talep, bot)
 
 Katmanlı:
-- **Honeypot:** pencerede görünmeyen bir alan. Dolu gelirse LLM'e gidilmez, bota "başarılı" görünen sahte cevap döner.
 - **Zamanlama:** sohbet açıldıktan 3 saniye içinde biten bir talep insan hızında değildir; kaydedilmez.
+- **En az 4 ziyaretçi mesajı** olmadan talep oluşmaz; tek mesajlık "spray" denemeleri kayda dönüşemez.
 - **IP rate limit** (Postgres'te): dakikada 20, saatte 120 mesaj; günde 5 talep. Oturum başına 40 mesaj, mesaj başına 1000 karakter. LLM maliyetini de sınırlar.
 - **Tur sınırı:** 14 asistan mesajı; sohbet sonsuza uzayamaz.
 - **LLM spam sınıflandırması:** analiz aşamasında anlamsız/alakasız içerik `spam` sekmesine düşer, silinmez.
 - Tüm doğrulama sunucuda tekrar yapılır; istemciye güvenilmez.
+
+**Neden honeypot yok:** İlk sürümde vardı, formla birlikte kaldırdım. Honeypot, sayfadaki tüm alanları körlemesine dolduran basit form botlarını yakalar; artık gizli alan tıklanınca açılan bir panelin içinde olurdu ve o botlar paneli açmaz. API'ye doğrudan istek atan botlar ise gizli alanı zaten doldurmaz. Sohbet arayüzünde gerçek koruma rate limit, zamanlama, tur kuralları ve içerik sınıflandırmasıdır; hedefli bot trafiği için sıradaki adım Turnstile.
 
 ### 6. Ziyaretçi bir soruya cevap vermek istemezse?
 

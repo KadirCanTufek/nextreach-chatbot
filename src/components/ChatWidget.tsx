@@ -63,7 +63,6 @@ export default function ChatWidget({ open, onOpenChange }: Props) {
   const [leadId, setLeadId] = useState<string | null>(null);
   const [contactAdded, setContactAdded] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [website, setWebsite] = useState(""); // honeypot
 
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -114,7 +113,7 @@ export default function ChatWidget({ open, onOpenChange }: Props) {
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId: session.id, startedAt: session.startedAt, website, messages: next, ...(leadId ? { leadId } : {}) }),
+          body: JSON.stringify({ sessionId: session.id, startedAt: session.startedAt, messages: next, ...(leadId ? { leadId } : {}) }),
         });
         const data = (await res.json()) as ChatResponse & { error?: string };
         if (!res.ok && !data.reply) throw new Error(data.error ?? "Bir sorun oluştu.");
@@ -131,7 +130,7 @@ export default function ChatWidget({ open, onOpenChange }: Props) {
         setSending(false);
       }
     },
-    [messages, sending, website, leadId],
+    [messages, sending, leadId],
   );
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -303,14 +302,6 @@ export default function ChatWidget({ open, onOpenChange }: Props) {
             </div>
 
             {error && <p className="px-4 py-2 text-sm text-red-600 bg-red-50 border-t border-red-100">{error}</p>}
-
-            {/* Honeypot: insanlar görmez, botlar doldurur */}
-            <div className="absolute -left-[9999px] top-0 h-0 w-0 overflow-hidden" aria-hidden>
-              <label>
-                Web siteniz
-                <input tabIndex={-1} autoComplete="off" value={website} onChange={(e) => setWebsite(e.target.value)} />
-              </label>
-            </div>
 
             {/* Giriş: talep iletildikten sonra da açık kalır (sorular, geç iletişim bilgisi) */}
             <div className="border-t border-slate-100 p-3 bg-white">
