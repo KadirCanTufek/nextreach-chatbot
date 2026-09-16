@@ -23,7 +23,7 @@ function answer(question: string, chips: string[], turn: number): string {
   const sentences = question.replace(/\n+/g, " ").split(/(?<=[.?!])\s+/).filter(Boolean);
   const last = (sentences[sentences.length - 1] ?? question).toLowerCase();
   const has = (...keys: string[]) => keys.some((k) => last.includes(k));
-  if (has("hitap", "isminiz", "adınız", "nasıl seslen")) return persona.name;
+  if (has("hitap", "isminiz", "soyisminiz", "adınız", "nasıl seslen")) return persona.name;
   if (has("e-posta", "telefon", "numara", "ulaşabil", "iletişim bilgi", "iletişime geç", "adresinizi")) return persona.email;
   if (has("marka", "şirket", "firma", "mağazanızın adı", "hangi mağaza")) return persona.company;
   if (has("platform", "altyapı", "shopify", "ikas", "ticimax")) return "ikas";

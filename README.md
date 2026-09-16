@@ -58,7 +58,7 @@ Deploy: Vercel'e bağlayın, aynı üç değişkeni Environment Variables'a giri
 
 **Omurga:**
 1. İhtiyaç önce. İlk mesaja yansıtma + tek derinleştirme sorusu.
-2. İkinci-üçüncü mesajda doğal bir isim sorusu: "Bu arada size nasıl hitap edeyim?"
+2. İkinci-üçüncü mesajda isim sorusu: "Size hitap edebilmem için isim ve soyisminizi alabilir miyim?"
 3. Şirket bilgileri sohbetin içine yayılır: marka adı (serbest metin), platform, mağaza büyüklüğü, rol. Yapısal olanlar **çiplerle** sorulur (Shopify | ikas | Ticimax | T-Soft | Diğer gibi): mobilde yazmayı azaltır, veriyi standartlaştırır.
 4. Zorunlu üç başlık dolunca, özetten **hemen önce** iletişim istenir ve nedeni söylenir: "Ekibin 1 iş günü içinde dönmesi için e-posta ya da telefon, biri yeter." Bir kez istenir; vermezse ısrar yok.
 5. 2-3 satır özet + "eksik var mı?" → onay → kayıt.
