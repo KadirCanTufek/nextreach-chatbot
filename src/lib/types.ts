@@ -7,21 +7,12 @@ export interface ChatMessage {
   content: string;
 }
 
-/** Adım 1: ziyaretçinin formda verdiği bilgiler. Anonim modda hepsi boş olabilir. */
-export interface Visitor {
-  name: string;
-  email: string;
-  company: string;
-  storeSize: string;
-  anonymous: boolean;
-}
-
 export type LeadKind = "qualified" | "no_contact" | "spam";
 export type LeadScore = "hot" | "warm" | "cold";
 export type LeadUrgency = "none" | "normal" | "urgent";
 export type LeadStatus = "new" | "contacted" | "closed";
 
-/** Sohbetin sonunda modelin doldurduğu ihtiyaç profili. */
+/** Sohbetin sonunda modelin doldurduğu ihtiyaç profili (admin'de gösterilen kısım). */
 export interface NeedProfile {
   goal_or_problem: string;
   current_setup: string;
@@ -54,11 +45,10 @@ export interface Lead {
   transcript: ChatMessage[];
 }
 
-/** /api/chat isteği */
+/** /api/chat isteği. Form yok: kimlik ve iletişim bilgileri sohbette toplanır. */
 export interface ChatRequest {
   sessionId: string;
   startedAt: number;
-  visitor: Visitor;
   messages: ChatMessage[];
   /** Honeypot: gerçek kullanıcı bu alanı hiç görmez, boş kalmalıdır. */
   website?: string;
@@ -67,6 +57,8 @@ export interface ChatRequest {
 /** /api/chat cevabı */
 export interface ChatResponse {
   reply: string;
+  /** Yapısal sorularda hızlı cevap çipleri (en fazla 4). */
+  chips?: string[];
   done: boolean;
   leadId?: string;
 }

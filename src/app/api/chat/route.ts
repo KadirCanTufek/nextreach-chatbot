@@ -1,9 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { analyzeLead, computeCompleteness, runChatTurn } from "@/lib/claude";
+import { analyzeLead, computeCompleteness, runChatTurn, toNeedProfile } from "@/lib/claude";
 import { insertLead } from "@/lib/db";
 import { LIMITS, checkLeadRate, checkMessageRate, getClientIp } from "@/lib/rate-limit";
-import type { ChatResponse, LeadKind, NeedProfile } from "@/lib/types";
+import type { ChatResponse, LeadKind } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -15,13 +15,6 @@ const Body = z.object({
   sessionId: z.string().min(8).max(64),
   startedAt: z.number().int().positive(),
   website: z.string().optional(), // honeypot
-  visitor: z.object({
-    name: z.string().max(120),
-    email: z.string().max(200),
-    company: z.string().max(200),
-    storeSize: z.string().max(100),
-    anonymous: z.boolean(),
-  }),
   messages: z
     .array(
       z.object({
@@ -59,33 +52,25 @@ async function handle(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Geçersiz istek.", issues: parsed.error.issues }, { status: 400 });
   }
-  const { sessionId, startedAt, website, visitor, messages } = parsed.data;
+  const { sessionId, startedAt, website, messages } = parsed.data;
 
   // Honeypot dolu: bot. Sessizce "başarılı" görünen bir cevap ver, LLM'e gitme.
   if (website && website.trim().length > 0) {
     return reply({ reply: "Teşekkürler, ekibimiz sizinle iletişime geçecek.", done: true });
   }
 
-  // Form doğrulaması (anonim değilse zorunlu alanlar dolu ve e-posta geçerli olmalı)
-  if (!visitor.anonymous) {
-    const emailOk = z.string().email().safeParse(visitor.email).success;
-    if (!visitor.name.trim() || !visitor.company.trim() || !emailOk) {
-      return NextResponse.json({ error: "İsim, geçerli e-posta ve şirket zorunludur." }, { status: 400 });
-    }
+  const lastMessage = messages[messages.length - 1];
+  if (lastMessage.role !== "user" || !lastMessage.content.trim()) {
+    return NextResponse.json({ error: "Son mesaj ziyaretçiden gelmeli." }, { status: 400 });
   }
 
   const rate = await checkMessageRate(ip);
   if (!rate.ok) return reply({ reply: rate.reason, done: false }, 429);
 
-  const lastMessage = messages[messages.length - 1];
-  if (lastMessage.role !== "user") {
-    return NextResponse.json({ error: "Son mesaj ziyaretçiden gelmeli." }, { status: 400 });
-  }
-
-  const turn = await runChatTurn(visitor, messages);
+  const turn = await runChatTurn(messages);
 
   if (turn.type === "reply") {
-    return reply({ reply: turn.text, done: false });
+    return reply({ reply: turn.text, chips: turn.chips, done: false });
   }
 
   // --- Sohbet bitti: talep oluştur ---
@@ -99,22 +84,16 @@ async function handle(req: NextRequest) {
   if (!leadRate.ok) return reply({ reply: turn.text, done: true });
 
   const transcript = [...messages, { role: "assistant" as const, content: turn.text }];
-  const profile: NeedProfile = {
-    goal_or_problem: turn.profile.goal_or_problem,
-    current_setup: turn.profile.current_setup,
-    timeline: turn.profile.timeline,
-    scale: turn.profile.scale,
-    decision_role: turn.profile.decision_role,
-    specific_questions: turn.profile.specific_questions,
-  };
-  const completeness = computeCompleteness(visitor, profile);
-  const analysis = await analyzeLead(visitor, turn.profile, transcript, completeness);
+  const profile = turn.profile;
+  const completeness = computeCompleteness(profile);
+  const analysis = await analyzeLead(profile, transcript, completeness);
 
-  // İletişim bilgisi: formdan; anonimse sohbetten çıkarılan
-  const email = visitor.anonymous ? analysis.extracted_email : visitor.email;
-  const phone = visitor.anonymous ? analysis.extracted_phone : null;
-  const name = visitor.anonymous ? analysis.extracted_name : visitor.name;
-  const company = visitor.anonymous ? analysis.extracted_company : visitor.company;
+  // İletişim bilgisi: önce modelin topladığı profil, yoksa analizin sohbetten çıkardığı
+  const email = profile.email ?? analysis.extracted_email ?? null;
+  const phone = profile.phone ?? analysis.extracted_phone ?? null;
+  const name = profile.name ?? analysis.extracted_name ?? null;
+  const company = profile.company ?? analysis.extracted_company ?? null;
+  const contactInferred = profile.email === null && profile.phone === null && Boolean(email || phone);
   const hasContact = Boolean(email || phone);
 
   let kind: LeadKind = "qualified";
@@ -124,15 +103,15 @@ async function handle(req: NextRequest) {
   const leadId = await insertLead({
     sessionId,
     ip,
-    name: name || null,
-    email: email || null,
-    phone: phone || null,
-    company: company || null,
-    storeSize: visitor.storeSize || turn.profile.scale || null,
-    contactInferred: visitor.anonymous && hasContact,
-    needSummary: turn.profile.need_summary,
-    needProfile: profile,
-    endedEarly: turn.profile.ended_early,
+    name,
+    email,
+    phone,
+    company,
+    storeSize: profile.store_size ?? profile.scale ?? null,
+    contactInferred,
+    needSummary: profile.need_summary,
+    needProfile: toNeedProfile(profile),
+    endedEarly: profile.ended_early,
     kind,
     score: kind === "spam" ? null : analysis.score,
     urgency: kind === "spam" ? null : analysis.urgency,

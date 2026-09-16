@@ -11,7 +11,8 @@ const FEATURES = [
 ];
 
 export default function LandingPage() {
-  const [open, setOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const openChat = () => setChatOpen(true);
 
   return (
     <main className="flex-1 flex flex-col">
@@ -24,7 +25,7 @@ export default function LandingPage() {
           <nav className="hidden sm:flex items-center gap-8 text-sm text-slate-600">
             <a href="#features" className="hover:text-slate-900">Ürün</a>
             <a href="#pricing" className="hover:text-slate-900">Fiyatlandırma</a>
-            <button onClick={() => setOpen(true)} className="rounded-full bg-slate-900 text-white px-4 py-2 text-sm font-medium hover:bg-slate-800">
+            <button onClick={openChat} className="rounded-full bg-slate-900 text-white px-4 py-2 text-sm font-medium hover:bg-slate-800">
               Bize Ulaşın
             </button>
           </nav>
@@ -41,7 +42,7 @@ export default function LandingPage() {
         </p>
         <div className="mt-10 flex flex-col sm:flex-row gap-3">
           <button
-            onClick={() => setOpen(true)}
+            onClick={openChat}
             className="rounded-full bg-indigo-600 text-white px-6 py-3 text-base font-medium hover:bg-indigo-500 shadow-sm"
           >
             Bize Ulaşın
@@ -50,7 +51,7 @@ export default function LandingPage() {
             Nasıl çalışır
           </a>
         </div>
-        <p className="mt-4 text-sm text-slate-500">Form yok. Ne aradığınızı konuşarak anlatın, 1 iş günü içinde dönelim.</p>
+        <p className="mt-4 text-sm text-slate-500">Form yok. Sağ alttaki asistana ne aradığınızı anlatın, 1 iş günü içinde dönelim.</p>
       </section>
 
       <section id="features" className="border-t border-slate-100 bg-slate-50">
@@ -69,7 +70,7 @@ export default function LandingPage() {
         <p className="mt-2 text-slate-600 max-w-xl">
           Mağaza büyüklüğüne göre kademeli. Aylık sipariş hacminizi söyleyin, size uyan paketi netleştirelim.
         </p>
-        <button onClick={() => setOpen(true)} className="mt-6 text-indigo-600 font-medium hover:underline">
+        <button onClick={openChat} className="mt-6 text-indigo-600 font-medium hover:underline">
           Fiyat sormak için bize ulaşın →
         </button>
       </section>
@@ -81,7 +82,7 @@ export default function LandingPage() {
         </div>
       </footer>
 
-      <ChatWidget open={open} onClose={() => setOpen(false)} />
+      <ChatWidget open={chatOpen} onOpenChange={setChatOpen} />
     </main>
   );
 }

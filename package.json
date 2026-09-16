@@ -9,7 +9,7 @@
     "lint": "eslint",
     "db:setup": "node --env-file=.env.local scripts/db-setup.mjs",
     "typecheck": "tsc --noEmit",
-    "test:chat": "node --env-file=.env.local --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-chat.mts"
+    "test:chat": "node --env-file=.env.local --import tsx scripts/test-chat.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",
@@ -33,6 +33,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
     "tailwindcss": "^4",
+    "tsx": "^4.23.13",
     "typescript": "^5"
   }
 }

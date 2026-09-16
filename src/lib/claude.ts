@@ -1,13 +1,14 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
-import type { ChatMessage, LeadScore, LeadUrgency, NeedProfile, Visitor } from "./types";
+import type { ChatMessage, NeedProfile } from "./types";
+import { ASSISTANT_NAME, GREETING, GREETING_CHIPS } from "./chat-config";
 
 export const MODEL = "claude-sonnet-5";
-export const ASSISTANT_NAME = "Reach";
+export { ASSISTANT_NAME, GREETING, GREETING_CHIPS };
 
 /** Bu sayıdan sonra model özetleyip kapatmaya yönlendirilir. */
-export const MAX_ASSISTANT_TURNS = 8;
+export const MAX_ASSISTANT_TURNS = 14;
 
 let cachedClient: Anthropic | null = null;
 function client(): Anthropic {
@@ -16,19 +17,15 @@ function client(): Anthropic {
 }
 
 // ---------------------------------------------------------------------------
-// 1) Sohbet: ihtiyacı derinleştirme
+// Yardımcılar
 // ---------------------------------------------------------------------------
 
 /**
- * "Yeter" kararını sınırlayan şema. Model bu aracı ancak zorunlu alanları
- * somut içerikle doldurabildiğinde çağırabilir; kod tarafı ayrıca doğrular.
- */
-/**
  * Model bazen araç parametrelerine etiket artığı sızdırır
- * (ör. "...</need_summary>\n<parameter name=...>"). İlk kapanış etiketinde kes, kalan etiketleri temizle.
+ * (ör. "...</need_summary>\n<parameter name=...>"). Yalnızca araç/parametre
+ * etiketlerini hedefle; normal metne dokunma.
  */
 function cleanText(value: string): string {
-  // Yalnızca araç/parametre etiketlerini hedefle (alt çizgili alan adları, parameter, invoke); normal metne dokunma.
   const TAG = /<\/?(?:[a-z]+_[a-z_]+|parameter|invoke)\b[^>]*>/gi;
   const cut = value.split(/<\/(?:[a-z]+_[a-z_]+|parameter|invoke)>/i)[0];
   return cut.replace(TAG, "").trim();
@@ -36,15 +33,63 @@ function cleanText(value: string): string {
 const cleanString = () => z.string().transform(cleanText);
 const cleanNullable = () => z.string().nullable().transform((v) => (v === null ? null : cleanText(v)));
 
+/** "yok", "belirtilmedi" gibi değerleri null'a çevirir. */
+const NONE_RE = /^(yok|belirtilmedi|belirtmedi|bilinmiyor|null|none|-|—|vermek istemedi.*|paylaşmak istemedi.*)$/i;
+const optionalContact = () => cleanNullable().transform((v) => (v === null || v.length === 0 || NONE_RE.test(v) ? null : v));
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Zorunlu ihtiyaç alanları: temizle, "yok/belirtilmedi" varyantlarını tek biçime indir. */
+const mandatoryText = () => cleanString().transform((v) => (NONE_RE.test(v) || v.length === 0 ? "belirtilmedi" : v));
+const isUnknown = (v: string) => v === "belirtilmedi";
+
+/** Çip protokolü: model mesajın son satırına [[chips: a | b | c]] ekler. */
+const CHIPS_RE = /\s*\[\[\s*chips?\s*:\s*([^\]]*)\]\]\s*/gi;
+export function splitChips(text: string): { text: string; chips: string[] } {
+  let chips: string[] = [];
+  const cleaned = text
+    .replace(CHIPS_RE, (_m, body: string) => {
+      chips = body
+        .split("|")
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .slice(0, 4)
+        .map((s) => s.slice(0, 40));
+      return "\n";
+    })
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return { text: cleaned, chips };
+}
+
+// ---------------------------------------------------------------------------
+// 1) Sohbet: ihtiyacı derinleştirme + iletişim bilgisi
+// ---------------------------------------------------------------------------
+
+/**
+ * "Yeter" kararını sınırlayan şema. Model bu aracı ancak zorunlu alanları
+ * somut içerikle doldurabildiğinde çağırabilir; kod tarafı ayrıca doğrular.
+ */
 export const FinalizeInput = z.object({
-  goal_or_problem: cleanString()
-    .refine((v) => v.length >= 20, "Hedef veya problem en az bir cümle olmalı.")
+  // Kimlik ve iletişim (sohbetten toplanır; ziyaretçi vermediyse null)
+  name: optionalContact().describe("Ziyaretçinin adı. Söylemediyse null."),
+  company: optionalContact().describe("Şirket / marka adı. Söylemediyse null."),
+  email: optionalContact()
+    .transform((v) => (v === null ? null : v.toLowerCase().replace(/\s+/g, "")))
+    .refine((v) => v === null || EMAIL_RE.test(v), "E-posta biçimi geçersiz görünüyor; ziyaretçiye teyit ettir ya da null bırak.")
+    .describe("E-posta adresi, yoksa null."),
+  phone: optionalContact()
+    .refine((v) => v === null || v.replace(/\D/g, "").length >= 7, "Telefon numarası eksik görünüyor; teyit ettir ya da null bırak.")
+    .describe("Telefon numarası, yoksa null."),
+  store_size: optionalContact().describe("Mağaza büyüklüğü (aylık sipariş bandı vb.). Konuşulmadıysa null."),
+
+  // İhtiyaç profili
+  goal_or_problem: mandatoryText()
+    .refine((v) => v.length >= 20, "Hedef veya problem en az bir cümle olmalı; ziyaretçiye analitikle tam olarak neyi çözmek istediğini sor.")
     .describe("Ziyaretçinin analitikle çözmek istediği problem ya da ulaşmak istediği hedef. Somut ve kendi ifadesine yakın."),
-  current_setup: cleanString()
-    .refine((v) => v.length >= 3, "Mevcut durum boş olamaz; bilinmiyorsa 'belirtilmedi'.")
+  current_setup: mandatoryText()
     .describe("Şu an ne kullanıyor: e-ticaret platformu ve raporlamayı nasıl yapıyor (Excel, GA, panel, hiç). Bilinmiyorsa 'belirtilmedi'."),
-  timeline: cleanString()
-    .refine((v) => v.length >= 3, "Zamanlama boş olamaz; bilinmiyorsa 'belirtilmedi'.")
+  timeline: mandatoryText()
     .describe("Ne zaman başlamak istiyor, tetikleyen bir olay veya son tarih var mı. Bilinmiyorsa 'belirtilmedi'."),
   scale: cleanNullable().describe("Ölçek sinyali: aylık sipariş, SKU, ekip büyüklüğü, ciro bandı. Konuşulmadıysa null."),
   decision_role: cleanNullable().describe("Karar verici mi, değerlendirme yapan mı, başkası adına mı araştırıyor. Konuşulmadıysa null."),
@@ -55,32 +100,68 @@ export const FinalizeInput = z.object({
   need_summary: cleanString()
     .refine((v) => v.length >= 40, "Satış özeti en az 2 cümle olmalı.")
     .describe("Satış ekibi için 2-3 cümlelik özet: kim, ne istiyor, neden şimdi. İlk aramaya hazırlık için yeter olmalı."),
+  contact_requested: z.boolean().describe("İletişim bilgisi ziyaretçiden istendi mi? (Verilmiş olması gerekmez.)"),
   visitor_confirmed: z.boolean().describe("Ziyaretçi özeti onayladı mı? Erken bitişte false olabilir."),
   ended_early: z.boolean().describe("Ziyaretçi acelesi olduğunu söyledi, soruları geçti ya da tur sınırına ulaşıldı ise true."),
   early_reason: cleanNullable().describe("ended_early true ise kısa neden, değilse null."),
+  declined_fields: z
+    .array(z.string())
+    .describe("Ziyaretçinin iki kez sorulmasına rağmen AÇIKÇA cevap vermek istemediği alanlar: 'current_setup', 'timeline', 'goal_or_problem', 'contact'. Yoksa boş dizi."),
+}).superRefine((v, ctx) => {
+  // "Yeter" kuralları: araç açıklaması değil, kod karar verir.
+  const declined = (f: string) => v.declined_fields.includes(f);
+  if (isUnknown(v.current_setup) && !declined("current_setup")) {
+    ctx.addIssue({ code: "custom", path: ["current_setup"], message: "Mevcut durum bilinmiyor. Hangi e-ticaret platformunu kullandığını ve raporlamayı bugün nasıl yaptığını sor (çip: Shopify | ikas | Ticimax | T-Soft | Diğer)." });
+  }
+  if (isUnknown(v.timeline) && !declined("timeline")) {
+    ctx.addIssue({ code: "custom", path: ["timeline"], message: "Zamanlama bilinmiyor. Ne zaman başlamak istediğini sor (çip: Bu ay | 1-3 ay içinde | Bu yıl içinde | Sadece araştırıyorum)." });
+  }
+  if (!v.contact_requested) {
+    ctx.addIssue({ code: "custom", path: ["contact_requested"], message: "İletişim bilgisi henüz istenmedi. Gerekçesiyle e-posta ya da telefon iste (biri yeter); bu mesajda sadece bunu sor (çip: E-posta bırakayım | Telefon bırakayım | Şimdilik istemiyorum)." });
+  }
+  if (!v.ended_early && !v.visitor_confirmed) {
+    ctx.addIssue({ code: "custom", path: ["visitor_confirmed"], message: "Ziyaretçi özeti onaylamadı. Önce 2-3 satırlık özet yaz ve 'eksik ya da eklemek istediğiniz var mı?' diye sor (çip: Doğru, iletin | Düzeltmek istiyorum); onaylayınca tekrar çağır." });
+  }
+  if (v.ended_early && !v.early_reason) {
+    ctx.addIssue({ code: "custom", path: ["early_reason"], message: "ended_early true ise early_reason yazılmalı." });
+  }
 });
 export type FinalizeInputT = z.infer<typeof FinalizeInput>;
+
+const nullableString = { type: ["string", "null"] } as const;
 
 const FINALIZE_TOOL: Anthropic.Tool = {
   name: "finalize_conversation",
   description:
-    "Sohbeti bitirir ve ihtiyaç profilini satış ekibine iletir. YALNIZCA zorunlu alanlar (goal_or_problem, current_setup, timeline) somut olarak dolduğunda ve ziyaretçi özeti onayladığında; ya da ziyaretçi açıkça bitirmek istediğinde / tur sınırı dolduğunda çağır.",
+    "Sohbeti bitirir ve ihtiyaç profilini satış ekibine iletir. Çağırmadan önce kontrol listesi: (1) üç zorunlu başlık (goal_or_problem, current_setup, timeline) somut; (2) marka adı ve platform soruldu; (3) iletişim bilgisi gerekçesiyle istendi (verilmiş olması şart değil, contact_requested=true); (4) özet yazıldı ve ziyaretçi onayladı (visitor_confirmed=true). Bunlar sağlanmadan çağırırsan hata alırsın. İstisna: ziyaretçi açıkça bitirmek istiyorsa ya da tur sınırı dolduysa, iletişimi tek cümleyle isteyip bir sonraki mesajda elindekilerle çağır (ended_early=true, early_reason dolu).",
   strict: true,
   input_schema: {
     type: "object",
     properties: {
+      name: nullableString,
+      company: nullableString,
+      email: nullableString,
+      phone: nullableString,
+      store_size: nullableString,
       goal_or_problem: { type: "string" },
       current_setup: { type: "string" },
       timeline: { type: "string" },
-      scale: { type: ["string", "null"] },
-      decision_role: { type: ["string", "null"] },
+      scale: nullableString,
+      decision_role: nullableString,
       specific_questions: { type: "array", items: { type: "string" } },
       need_summary: { type: "string" },
+      contact_requested: { type: "boolean" },
       visitor_confirmed: { type: "boolean" },
       ended_early: { type: "boolean" },
-      early_reason: { type: ["string", "null"] },
+      early_reason: nullableString,
+      declined_fields: { type: "array", items: { type: "string" } },
     },
     required: [
+      "name",
+      "company",
+      "email",
+      "phone",
+      "store_size",
       "goal_or_problem",
       "current_setup",
       "timeline",
@@ -88,68 +169,76 @@ const FINALIZE_TOOL: Anthropic.Tool = {
       "decision_role",
       "specific_questions",
       "need_summary",
+      "contact_requested",
       "visitor_confirmed",
       "ended_early",
       "early_reason",
+      "declined_fields",
     ],
     additionalProperties: false,
   },
 };
 
-function visitorBlock(v: Visitor): string {
-  if (v.anonymous) {
-    return `Ziyaretçi formu doldurmadan devam etti (anonim). İsmini bilmiyorsun; "siz" diye hitap et. Sohbetin sonuna doğru, doğal bir yerde, satış ekibinin ulaşabilmesi için bir e-posta ya da telefon isteyebilirsin. En fazla bir kez iste; vermek istemezse ısrar etme ve devam et.`;
-  }
-  const lines = [
-    `İsim: ${v.name}`,
-    `Şirket: ${v.company}`,
-    `E-posta: ${v.email}`,
-    v.storeSize ? `Mağaza büyüklüğü (formdan): ${v.storeSize}` : null,
-  ].filter(Boolean);
-  return `Ziyaretçi formu doldurdu:\n${lines.join("\n")}\nBu bilgileri tekrar sorma. İsmiyle hitap edebilirsin ama her mesajda kullanma.`;
-}
-
-function buildSystemPrompt(visitor: Visitor, assistantTurns: number): string {
+function buildSystemPrompt(assistantTurns: number): string {
   const remaining = Math.max(0, MAX_ASSISTANT_TURNS - assistantTurns);
-  return `Sen ${ASSISTANT_NAME}'sin: NextReach'in web sitesindeki iletişim asistanı. NextReach, orta ölçekli e-ticaret firmalarına analitik dashboard'u sağlayan bir B2B SaaS şirketidir. Ziyaretçiler eskiden soğuk bir "Contact Sales" formu dolduruyordu ve çoğu vazgeçiyordu; sen o formun yerine geçiyorsun.
+  return `Sen ${ASSISTANT_NAME}'sin: NextReach'in web sitesindeki iletişim asistanı. NextReach, orta ölçekli e-ticaret firmalarına analitik dashboard'u sağlayan bir B2B SaaS şirketidir. Eskiden bu sitede soğuk bir "Contact Sales" formu vardı; ziyaretçilerin çoğu doldurmuyordu. Sen o formun yerine geçiyorsun: form yok, her şey konuşarak.
 
 ## Görevin
-Ziyaretçinin NEYE ihtiyacı olduğunu gerçekten anlamak. Amaç, satış ekibinin ilk aramaya hazırlıklı girmesi: kim, hangi problemi çözmek istiyor, şu an nasıl yapıyor, neden şimdi. Yüzeysel bir "bilgi almak istiyorum" cevabı yeterli değil; bir kat daha derine in.
+1. Ziyaretçinin NEYE ihtiyacı olduğunu gerçekten anlamak. Satış ekibi ilk aramaya hazır girsin: kim, hangi problemi çözmek istiyor, şu an nasıl yapıyor, neden şimdi.
+2. Satış ekibinin ulaşabileceği bilgiyi toplamak: isim, şirket, e-posta ya da telefon.
+Yüzeysel bir "bilgi almak istiyorum" yeterli değil; bir kat daha derine in.
+
+## Omurga (esnek uygula, ama sıra bu)
+1. İlk mesaja karşılık: ihtiyacı yansıt, TEK derinleştirme sorusu sor. Ziyaretçi soru sorduysa (fiyat vb.) önce ona cevap ver, sonra sor.
+2. İkinci ya da üçüncü mesajında ismini sor: "Bu arada size nasıl hitap edeyim?" Bu mesajda başka soru sorma. Sonra ismiyle hitap et ama her mesajda kullanma.
+3. Şirket bilgilerini sohbetin içine yay, her biri ayrı mesajda tek soru: marka/şirket adı (serbest metin, çip yok: "Hangi marka için bakıyorsunuz?"), e-ticaret platformu (çip), mağaza büyüklüğü (çip), ziyaretçinin rolü (çip). Ürün grubu ihtiyaç anlatımında zaten çıkar; ayrıca sorma. Ziyaretçi bunlardan birini kendiliğinden söylediyse tekrar sorma. Marka adı ve platform, satış ekibi için en değerli ikisi; rolü sohbet uzarsa atla.
+4. Zorunlu üç başlık dolduğunda ve özetten hemen ÖNCE iletişim iste. Gerekçesini söyle: ekibin 1 iş günü içinde dönebilmesi için e-posta ya da telefon, biri yeter. Bir kez iste. Vermek istemezse ısrar etme; anlayışla karşıla ve devam et.
+5. 2-3 satırlık özet yaz ve "eksik ya da eklemek istediğiniz var mı?" diye sor. Onaylayınca finalize_conversation çağır.
 
 ## Anlamak zorunda olduğun şeyler (zorunlu)
-1. Hedef veya problem: Analitikle ne çözmek ya da neye ulaşmak istiyor? Somut olsun. ("Raporlama" değil; "hangi ürünün kâr getirdiğini göremiyoruz" gibi.)
-2. Mevcut durum: Hangi e-ticaret platformunu kullanıyor, raporlamayı şu an nasıl yapıyor?
-3. Zamanlama: Ne zaman başlamak istiyor, tetikleyen bir şey var mı (sezon, yeni yatırım, mevcut aracın bitmesi)?
+1. Hedef veya problem: analitikle ne çözmek ya da neye ulaşmak istiyor? Somut olsun. ("Raporlama" değil; "hangi ürünün kâr getirdiğini göremiyoruz" gibi.)
+2. Mevcut durum: hangi e-ticaret platformu, raporlamayı şu an nasıl yapıyor?
+3. Zamanlama: ne zaman başlamak istiyor, tetikleyen bir şey var mı (sezon, yeni yatırım, mevcut aracın bitmesi)?
 
-## Sorabilirsen iyi olur (opsiyonel, en fazla bir kez sor)
+## Sorabilirsen iyi olur (en fazla bir kez)
 - Ölçek: aylık sipariş, ürün sayısı ya da ekip büyüklüğü.
 - Karar rolü: kararı kendisi mi veriyor.
 
+## Çipler (hızlı cevap seçenekleri)
+Yapısal bir soru sorduğunda mesajının EN SON satırına şu biçimde seçenek ekle:
+[[chips: Seçenek 1 | Seçenek 2 | Seçenek 3]]
+- En fazla 4 seçenek, her biri en fazla 4-5 kelime. Uygun yerde "Diğer" ya da "Emin değilim" ekle.
+- Çip ver: platform (Shopify | ikas | Ticimax | T-Soft | Diğer), mağaza büyüklüğü (Ayda 500'den az | 500-2.000 | 2.000-10.000 | 10.000 üzeri), zamanlama (Bu ay | 1-3 ay içinde | Bu yıl içinde | Sadece araştırıyorum), rol (Sahibi / ortağı | E-ticaret yöneticisi | Pazarlama | Diğer), iletişim tercihi (E-posta bırakayım | Telefon bırakayım | Şimdilik istemiyorum), özet onayı (Doğru, iletin | Düzeltmek istiyorum).
+- Çip VERME: açık uçlu ihtiyaç soruları, isim, şirket adı, e-posta veya telefonun kendisi.
+- Ziyaretçi çipe basınca metni normal mesaj olarak gelir; öyle işle. "E-posta bırakayım" derse bir sonraki mesajda adresi iste.
+
 ## Konuşma kuralları
-- Her mesajda TEK soru sor. Sorudan önce en fazla iki kısa cümle.
+- Her mesajda TEK soru. Sorudan önce en fazla iki kısa cümle.
 - Ziyaretçinin söylediğini kısaca yansıt, sonra sor. Anlamadığını belli et ama sorgulama hissi verme.
-- Zaten cevaplanan şeyi tekrar sorma. Formdaki bilgileri tekrar sorma.
-- Ziyaretçi bir soruyu geçmek isterse: opsiyonelse hemen geç, zorunluysa nedenini bir cümleyle açıkla ve bir kez daha nazikçe iste. Yine vermezse "belirtilmedi" olarak kabul et ve devam et.
-- Ziyaretçi bir soru sorarsa (fiyat, entegrasyon, deneme) önce ona cevap ver: fiyat sorabilir, evet; net rakam satış ekibi paylaşır, sen "mağaza büyüklüğüne göre kademeli, ekip 1 iş günü içinde net teklif verir" diyebilirsin. Uydurma bilgi verme. Sonra kendi akışına dön.
+- Zaten cevaplanan şeyi tekrar sorma.
+- Ziyaretçi bir soruyu geçmek isterse: opsiyonelse hemen geç; zorunluysa nedenini bir cümleyle açıkla ve bir kez daha nazikçe iste. Yine vermezse "belirtilmedi" olarak kabul et ve devam et.
+- Ziyaretçi bir soru sorarsa önce ona cevap ver. Fiyat sorulabilir, evet: net rakamı satış ekibi paylaşır; sen "mağaza büyüklüğüne göre kademeli, ekip 1 iş günü içinde net teklif verir" diyebilirsin. Deneme/demo: "ekip görüşmede ayarlar". Uydurma bilgi verme. Sonra kendi akışına dön.
 - Ziyaretçi kaba, konu dışı ya da anlamsız yazıyorsa kibarca konuya çek; ikinci denemede de anlam çıkmıyorsa özetleyip bitir.
 
 ## Ne zaman "yeter"
-Üç zorunlu başlığa somut cevabın varsa ve ziyaretçinin açık sorusu kalmadıysa: 2-3 satırlık bir özet yaz ve "eksik ya da eklemek istediğiniz bir şey var mı?" diye sor. Ziyaretçi onaylayınca finalize_conversation aracını çağır.
-Ziyaretçi acelesi olduğunu söylerse, "bu kadar" derse ya da tur sınırı dolarsa: elindekilerle özetle ve hemen finalize_conversation çağır (ended_early=true).
-Araç çağrısından sonra tek cümlelik sıcak bir kapanış yaz: ekibin 1 iş günü içinde döneceğini söyle. Yeni soru sorma.
+finalize_conversation çağırmadan önce şu dördü sağlanmış olmalı; sağlanmadıysa araç hata döner:
+1. Üç zorunlu başlık somut (bilinmeyen varsa ziyaretçi iki kez sorulmasına rağmen açıkça reddetmiş ve declined_fields'a yazılmış).
+2. Marka adı ve platform soruldu.
+3. İletişim bilgisi gerekçesiyle istendi (contact_requested=true; verilmemiş olabilir).
+4. Özet yazıldı ve ziyaretçi onayladı (visitor_confirmed=true).
+Sıra: zorunlular → iletişim → özet ve onay → araç. İletişimi özetin içinde ya da özetten sonra isteme.
+Ziyaretçi acelesi olduğunu söylerse, "bu kadar" derse ya da tur sınırı dolarsa: iletişim bilgisini henüz istemediysen tek cümleyle iste; sonraki mesajında elindekilerle özetle ve finalize_conversation çağır (ended_early=true).
+Araç çağrısından sonra tek cümlelik sıcak bir kapanış yaz; iletişim bilgisi varsa "ekip 1 iş günü içinde dönecek", yoksa "istediğiniz zaman buradan tekrar yazabilirsiniz". Yeni soru sorma.
 
 ## Ton
 Sıcak, profesyonel, "siz". Kısa cümleler. Emoji yok. Türkçe. Pazarlama dili yok; meraklı bir danışman gibi.
-
-## Ziyaretçi
-${visitorBlock(visitor)}
 
 ## Durum
 Bu senin ${assistantTurns + 1}. mesajın. Kalan tur: ${remaining}.${
     remaining <= 1
       ? " TUR SINIRINA GELDİN: bu mesajda yeni soru sorma; elindekilerle özetle ve finalize_conversation çağır."
-      : remaining <= 3
-        ? " Toparlamaya başla; sadece zorunlu eksikleri sor."
+      : remaining <= 4
+        ? " Toparlamaya başla: opsiyonelleri atla, iletişim bilgisini istemediysen şimdi iste, sonra özetle."
         : ""
   }`;
 }
@@ -174,17 +263,25 @@ function toApiMessages(history: ChatMessage[]): Anthropic.MessageParam[] {
   return out;
 }
 
+function textOf(response: Anthropic.Message): string {
+  return response.content
+    .filter((b): b is Anthropic.TextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("\n")
+    .trim();
+}
+
 export type ChatTurnResult =
-  | { type: "reply"; text: string }
+  | { type: "reply"; text: string; chips: string[] }
   | { type: "finalized"; text: string; profile: FinalizeInputT };
 
 /**
  * Tek bir sohbet turu. Model ya cevap verir ya da finalize_conversation çağırır.
  * Araç girdisi şemadan geçmezse hata olarak geri verilir ve model eksikleri sormaya devam eder.
  */
-export async function runChatTurn(visitor: Visitor, history: ChatMessage[]): Promise<ChatTurnResult> {
+export async function runChatTurn(history: ChatMessage[]): Promise<ChatTurnResult> {
   const assistantTurns = history.filter((m) => m.role === "assistant").length;
-  const system = buildSystemPrompt(visitor, assistantTurns);
+  const system = buildSystemPrompt(assistantTurns);
   const messages = toApiMessages(history);
 
   for (let i = 0; i < 3; i++) {
@@ -198,26 +295,28 @@ export async function runChatTurn(visitor: Visitor, history: ChatMessage[]): Pro
     });
 
     if (response.stop_reason === "refusal") {
-      return { type: "reply", text: "Bu konuda yardımcı olamıyorum. NextReach ile ilgili ihtiyacınıza dönebilir miyiz?" };
+      return { type: "reply", text: "Bu konuda yardımcı olamıyorum. NextReach ile ilgili ihtiyacınıza dönebilir miyiz?", chips: [] };
     }
 
-    const text = response.content
-      .filter((b): b is Anthropic.TextBlock => b.type === "text")
-      .map((b) => b.text)
-      .join("\n")
-      .trim();
-
+    const rawText = textOf(response);
     const toolUse = response.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+
     if (!toolUse) {
-      return { type: "reply", text: text || "Devam edelim. Bana biraz daha anlatabilir misiniz?" };
+      const { text, chips } = splitChips(rawText);
+      return { type: "reply", text: text || "Devam edelim. Bana biraz daha anlatabilir misiniz?", chips };
     }
 
     const parsed = FinalizeInput.safeParse(toolUse.input);
     messages.push({ role: "assistant", content: response.content });
 
-    if (!parsed.success) {
+    const userCount = history.filter((m) => m.role === "user").length;
+    const tooShort = parsed.success && !parsed.data.ended_early && userCount < 4;
+
+    if (!parsed.success || tooShort) {
       // Şema reddetti: modele neyin eksik olduğunu söyle, soru sormaya devam etsin.
-      const issues = parsed.error.issues.map((iss) => `${iss.path.join(".")}: ${iss.message}`).join("; ");
+      const issues = parsed.success
+        ? `sohbet henüz çok kısa (${userCount} ziyaretçi mesajı); zorunlu başlıkları ve iletişimi tek tek sor`
+        : parsed.error.issues.map((iss) => `${iss.path.join(".")}: ${iss.message}`).join("; ");
       messages.push({
         role: "user",
         content: [
@@ -239,7 +338,7 @@ export async function runChatTurn(visitor: Visitor, history: ChatMessage[]): Pro
         {
           type: "tool_result",
           tool_use_id: toolUse.id,
-          content: "Talep satış ekibine iletildi. Ziyaretçiye tek cümlelik sıcak bir kapanış yaz; yeni soru sorma.",
+          content: "Talep satış ekibine iletildi. Ziyaretçiye tek cümlelik sıcak bir kapanış yaz; yeni soru sorma, çip verme.",
         },
       ],
     });
@@ -251,21 +350,18 @@ export async function runChatTurn(visitor: Visitor, history: ChatMessage[]): Pro
       tools: [FINALIZE_TOOL],
       output_config: { effort: "low" },
     });
-    const closingText = closing.content
-      .filter((b): b is Anthropic.TextBlock => b.type === "text")
-      .map((b) => b.text)
-      .join("\n")
-      .trim();
 
-    const combined = [text, closingText].filter(Boolean).join("\n\n");
+    const pre = splitChips(rawText).text;
+    const post = splitChips(textOf(closing)).text;
+    const combined = [pre, post].filter(Boolean).join("\n\n");
     return {
       type: "finalized",
-      text: combined || "Teşekkürler, talebinizi ekibimize ilettim. 1 iş günü içinde size dönüş yapacağız.",
+      text: combined || "Teşekkürler, talebinizi ekibimize ilettim.",
       profile: parsed.data,
     };
   }
 
-  return { type: "reply", text: "Biraz daha detay alabilir miyim? Analitikle tam olarak neyi çözmek istiyorsunuz?" };
+  return { type: "reply", text: "Biraz daha detay alabilir miyim? Analitikle tam olarak neyi çözmek istiyorsunuz?", chips: [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -278,52 +374,55 @@ const AnalysisOutput = z.object({
   score: z.enum(["hot", "warm", "cold"]).describe("Sıcak: e-ticaret firması + net problem + yakın zamanlama. Ilık: ilgi net ama zamanlama ya da problem belirsiz. Soğuk: araştırma, öğrenci, alakasız, ya da çok eksik."),
   urgency: z.enum(["none", "normal", "urgent"]).describe("Ziyaretçinin zaman baskısı: urgent = bu ay / sezon öncesi / mevcut araç bitiyor; normal = birkaç ay içinde; none = belirsiz ya da sadece araştırıyor."),
   score_reason: z.string().describe("Satış ekibi için tek cümle: neden bu skor ve aciliyet."),
-  extracted_email: z.string().nullable().describe("Sohbet içinde geçen e-posta, yoksa null."),
-  extracted_phone: z.string().nullable().describe("Sohbet içinde geçen telefon, yoksa null."),
-  extracted_name: z.string().nullable().describe("Sohbet içinde geçen isim, yoksa null."),
-  extracted_company: z.string().nullable().describe("Sohbet içinde geçen şirket adı, yoksa null."),
+  extracted_email: z.string().nullable().describe("Profilde yoksa ama sohbette geçiyorsa e-posta; yoksa null."),
+  extracted_phone: z.string().nullable().describe("Profilde yoksa ama sohbette geçiyorsa telefon; yoksa null."),
+  extracted_name: z.string().nullable().describe("Profilde yoksa ama sohbette geçiyorsa isim; yoksa null."),
+  extracted_company: z.string().nullable().describe("Profilde yoksa ama sohbette geçiyorsa şirket adı; yoksa null."),
 });
 export type AnalysisOutputT = z.infer<typeof AnalysisOutput>;
 
 /** Alan doluluk oranı: kod tarafında hesaplanır, modele girdi olarak verilir. */
-export function computeCompleteness(visitor: Visitor, profile: NeedProfile): number {
+export function computeCompleteness(profile: FinalizeInputT): number {
   const fields: Array<string | null | undefined> = [
-    visitor.anonymous ? null : visitor.name,
-    visitor.anonymous ? null : visitor.email,
-    visitor.anonymous ? null : visitor.company,
-    visitor.storeSize || profile.scale,
+    profile.name,
+    profile.company,
+    profile.email ?? profile.phone,
+    profile.store_size ?? profile.scale,
     profile.goal_or_problem,
-    profile.current_setup === "belirtilmedi" ? null : profile.current_setup,
-    profile.timeline === "belirtilmedi" ? null : profile.timeline,
+    isUnknown(profile.current_setup) ? null : profile.current_setup,
+    isUnknown(profile.timeline) ? null : profile.timeline,
     profile.decision_role,
   ];
   const filled = fields.filter((f) => f && f.trim().length > 0).length;
   return Math.round((filled / fields.length) * 100) / 100;
 }
 
-export async function analyzeLead(
-  visitor: Visitor,
-  profile: FinalizeInputT,
-  transcript: ChatMessage[],
-  completeness: number,
-): Promise<AnalysisOutputT> {
+export function toNeedProfile(profile: FinalizeInputT): NeedProfile {
+  return {
+    goal_or_problem: profile.goal_or_problem,
+    current_setup: profile.current_setup,
+    timeline: profile.timeline,
+    scale: profile.scale,
+    decision_role: profile.decision_role,
+    specific_questions: profile.specific_questions,
+  };
+}
+
+export async function analyzeLead(profile: FinalizeInputT, transcript: ChatMessage[], completeness: number): Promise<AnalysisOutputT> {
   const transcriptText = transcript.map((m) => `${m.role === "user" ? "Ziyaretçi" : ASSISTANT_NAME}: ${m.content}`).join("\n");
 
   const response = await client().messages.parse({
     model: MODEL,
     max_tokens: 2000,
     system:
-      "Sen NextReach satış ekibi için lead değerlendirme analistisin. NextReach orta ölçekli e-ticaret firmalarına analitik dashboard'u satar. Değerlendirmeyi iki kaynağa birlikte dayandır: (1) alan doluluk oranı ve alan içerikleri, (2) sohbetin tamamındaki bağlam ve niyet. Tek tarafa bağlı kalma: doluluk yüksek ama niyet zayıfsa düşür; doluluk düşük ama niyet ve zamanlama netse yükselt. Kısa ve gerekçeli ol.",
+      "Sen NextReach satış ekibi için lead değerlendirme analistisin. NextReach orta ölçekli e-ticaret firmalarına analitik dashboard'u satar. Değerlendirmeyi iki kaynağa birlikte dayandır: (1) alan doluluk oranı ve alan içerikleri, (2) sohbetin tamamındaki bağlam ve niyet. Tek tarafa bağlı kalma: doluluk yüksek ama niyet zayıfsa düşür; doluluk düşük ama niyet ve zamanlama netse yükselt. Profilde eksik olan isim/şirket/e-posta/telefon sohbette geçiyorsa çıkar. Kısa ve gerekçeli ol.",
     messages: [
       {
         role: "user",
-        content: `## Form bilgileri
-${visitor.anonymous ? "Anonim ziyaretçi (form doldurulmadı). Sohbette geçen iletişim bilgisi varsa çıkar." : `İsim: ${visitor.name}\nE-posta: ${visitor.email}\nŞirket: ${visitor.company}\nMağaza büyüklüğü: ${visitor.storeSize || "-"}`}
-
-## Alan doluluk oranı
+        content: `## Alan doluluk oranı
 ${Math.round(completeness * 100)}%
 
-## İhtiyaç profili (sohbetten)
+## Sohbetten toplanan profil
 ${JSON.stringify(profile, null, 2)}
 
 ## Sohbet
@@ -349,5 +448,3 @@ ${transcriptText}`,
   }
   return response.parsed_output;
 }
-
-export type { LeadScore, LeadUrgency };
